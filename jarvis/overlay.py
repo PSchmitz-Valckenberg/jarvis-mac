@@ -1,0 +1,160 @@
+"""Minimal dark Mac-style overlay.
+
+A frameless, translucent, rounded window that pops up near the top of the
+screen, takes a text query, and shows Jarvis's reply. The LLM call runs in a
+background thread so typing/animation never freezes.
+"""
+
+from __future__ import annotations
+
+import threading
+from typing import Callable
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QLabel,
+    QLineEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+# Mac-style dark glass look. Colors kept in one place for easy theming.
+_STYLE = """
+#card {
+    background-color: rgba(28, 28, 30, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 16px;
+}
+#input {
+    background: transparent;
+    border: none;
+    color: #f5f5f7;
+    font-size: 20px;
+    padding: 6px 2px;
+}
+#input::placeholder { color: rgba(235, 235, 245, 0.35); }
+#reply {
+    color: #e3e3e6;
+    font-size: 15px;
+    line-height: 1.4em;
+    padding: 2px;
+}
+#hint { color: rgba(235, 235, 245, 0.30); font-size: 11px; }
+"""
+
+
+class Overlay(QWidget):
+    """The pop-up window. Owns a text input and a reply area."""
+
+    # Emitted from the worker thread; delivered on the GUI thread (queued).
+    _reply_ready = Signal(str)
+    _error = Signal(str)
+
+    def __init__(self, ask: Callable[[str], str]) -> None:
+        super().__init__()
+        self._ask = ask
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedWidth(620)
+
+        self._build_ui()
+        self._reply_ready.connect(self._on_reply)
+        self._error.connect(self._on_error)
+
+    # ── UI construction ────────────────────────────────────────────
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        card = QFrame(self)
+        card.setObjectName("card")
+        card.setStyleSheet(_STYLE)
+        outer.addWidget(card)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(22, 18, 22, 16)
+        layout.setSpacing(10)
+
+        self._input = QLineEdit(card)
+        self._input.setObjectName("input")
+        self._input.setPlaceholderText("Ask Jarvis…")
+        self._input.returnPressed.connect(self._submit)
+        layout.addWidget(self._input)
+
+        self._reply = QLabel(card)
+        self._reply.setObjectName("reply")
+        self._reply.setWordWrap(True)
+        self._reply.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._reply.hide()
+        layout.addWidget(self._reply)
+
+        self._hint = QLabel("Enter to send · Esc to close", card)
+        self._hint.setObjectName("hint")
+        layout.addWidget(self._hint)
+
+    # ── Behaviour ──────────────────────────────────────────────────
+    def _submit(self) -> None:
+        prompt = self._input.text().strip()
+        if not prompt:
+            return
+        self._input.setEnabled(False)
+        self._show_reply("…thinking")
+
+        # Run the (blocking) network call off the GUI thread.
+        threading.Thread(target=self._worker, args=(prompt,), daemon=True).start()
+
+    def _worker(self, prompt: str) -> None:
+        try:
+            self._reply_ready.emit(self._ask(prompt))
+        except Exception as exc:  # noqa: BLE001 — report any failure in the UI
+            self._error.emit(str(exc))
+
+    def _on_reply(self, text: str) -> None:
+        self._show_reply(text or "(no response)")
+        self._input.setEnabled(True)
+        self._input.clear()
+        self._input.setFocus()
+
+    def _on_error(self, message: str) -> None:
+        self._show_reply(f"⚠️  {message}")
+        self._input.setEnabled(True)
+        self._input.setFocus()
+
+    def _show_reply(self, text: str) -> None:
+        self._reply.setText(text)
+        self._reply.show()
+        self.adjustSize()
+        self._reposition()
+
+    # ── Window placement / focus ───────────────────────────────────
+    def _reposition(self) -> None:
+        screen = QApplication.primaryScreen().availableGeometry()
+        x = screen.x() + (screen.width() - self.width()) // 2
+        y = screen.y() + int(screen.height() * 0.22)
+        self.move(x, y)
+
+    def pop_up(self) -> None:
+        """Show, center, and grab keyboard focus."""
+        self._reply.hide()
+        self._input.clear()
+        self._input.setEnabled(True)
+        self.adjustSize()
+        self._reposition()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._input.setFocus()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 — Qt override
+        if event.key() == Qt.Key.Key_Escape:
+            self.hide()
+            return
+        super().keyPressEvent(event)
