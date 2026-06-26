@@ -25,43 +25,54 @@ class VoiceError(Exception):
 
 
 class Recorder:
-    """Captures mono 16kHz audio for the duration of a hold."""
+    """Captures mono 16kHz audio for the duration of a hold.
+
+    Opens the microphone stream once and keeps it open for the app's whole
+    lifetime instead of reopening it per hold. CoreAudio can silently hand
+    back a beat of zeros right after (re)opening an input device — closing
+    and reopening per hold made that happen on nearly every hold. Staying
+    open and just toggling capture on/off avoids that entirely.
+    """
 
     def __init__(self) -> None:
-        self._stream: sd.InputStream | None = None
+        self._armed = False
         self._chunks: list[np.ndarray] = []
-
-    def start(self) -> None:
-        self._chunks = []
         try:
             self._stream = sd.InputStream(
                 samplerate=SAMPLE_RATE,
                 channels=1,
                 dtype="float32",
+                latency="low",
                 callback=self._on_audio,
             )
             self._stream.start()
         except Exception as exc:  # noqa: BLE001 — surface any audio/device error cleanly
-            self._stream = None
             raise VoiceError(f"Couldn't open microphone: {exc}") from exc
 
     def _on_audio(self, indata: np.ndarray, frames: int, time_info, status) -> None:
-        self._chunks.append(indata.copy())
+        if self._armed:
+            self._chunks.append(indata.copy())
+
+    def start(self) -> None:
+        self._chunks = []
+        self._armed = True
 
     def stop(self) -> np.ndarray:
         """Stop capture and return the recorded audio as a flat float32 array."""
-        if self._stream is None:
+        self._armed = False
+        chunks, self._chunks = self._chunks, []
+        if not chunks:
             return np.empty(0, dtype="float32")
+        return np.concatenate(chunks, axis=0).reshape(-1)
+
+    def close(self) -> None:
+        """Release the microphone — call once, on app shutdown."""
         self._stream.stop()
         self._stream.close()
-        self._stream = None
-        if not self._chunks:
-            return np.empty(0, dtype="float32")
-        return np.concatenate(self._chunks, axis=0).reshape(-1)
 
     @property
     def is_recording(self) -> bool:
-        return self._stream is not None
+        return self._armed
 
 
 class Transcriber:
@@ -79,10 +90,13 @@ class Transcriber:
         if audio.size == 0:
             return ""
         try:
+            # No VAD filter: these clips are already bounded by the hold
+            # duration, and VAD's silence heuristics can strip short or
+            # quiet speech entirely on clips this brief.
             segments, _info = self._model.transcribe(
                 audio,
                 language=config.whisper_language,
-                vad_filter=True,
+                vad_filter=False,
             )
             return " ".join(segment.text.strip() for segment in segments).strip()
         except Exception as exc:  # noqa: BLE001 — surface any transcription error cleanly
