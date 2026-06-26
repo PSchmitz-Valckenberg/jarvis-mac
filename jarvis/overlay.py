@@ -43,6 +43,7 @@ _STYLE = """
     padding: 2px;
 }
 #hint { color: rgba(235, 235, 245, 0.30); font-size: 11px; }
+#status { color: rgba(235, 235, 245, 0.55); font-size: 14px; padding: 6px 2px; }
 """
 
 
@@ -89,6 +90,11 @@ class Overlay(QWidget):
         self._input.returnPressed.connect(self._submit)
         layout.addWidget(self._input)
 
+        self._status = QLabel(card)
+        self._status.setObjectName("status")
+        self._status.hide()
+        layout.addWidget(self._status)
+
         self._reply = QLabel(card)
         self._reply.setObjectName("reply")
         self._reply.setWordWrap(True)
@@ -96,7 +102,7 @@ class Overlay(QWidget):
         self._reply.hide()
         layout.addWidget(self._reply)
 
-        self._hint = QLabel("Enter to send · Esc to close", card)
+        self._hint = QLabel("Enter to send · Esc to close · hold ⌥ to talk", card)
         self._hint.setObjectName("hint")
         layout.addWidget(self._hint)
 
@@ -106,10 +112,53 @@ class Overlay(QWidget):
         if not prompt:
             return
         self._input.setEnabled(False)
+        self._status.hide()
         self._show_reply("…thinking")
 
         # Run the (blocking) network call off the GUI thread.
         threading.Thread(target=self._worker, args=(prompt,), daemon=True).start()
+
+    # ── Voice (hold-to-talk) ───────────────────────────────────────
+    def show_listening(self) -> None:
+        """Hold started: show the overlay in a recording state."""
+        self._reply.hide()
+        self._input.clear()
+        self._input.setEnabled(False)
+        self._status.setText("🔴 Listening…")
+        self._status.show()
+        self.adjustSize()
+        self._reposition()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def show_transcribing(self) -> None:
+        """Hold released: recording stopped, now running STT."""
+        self._status.setText("Transcribing…")
+
+    def cancel_listening(self) -> None:
+        """Hold was too short — drop back to normal text-input mode."""
+        self._status.hide()
+        self._input.setEnabled(True)
+        self._input.setFocus()
+
+    def submit_voice_text(self, text: str) -> None:
+        """Transcription succeeded: show it and send it like typed input."""
+        text = text.strip()
+        self._status.hide()
+        self._input.setEnabled(True)
+        if not text:
+            self._show_reply("(didn't catch that — try again)")
+            self._input.setFocus()
+            return
+        self._input.setText(text)
+        self._submit()
+
+    def show_voice_error(self, message: str) -> None:
+        self._status.hide()
+        self._input.setEnabled(True)
+        self._show_reply(f"⚠️  {message}")
+        self._input.setFocus()
 
     def _worker(self, prompt: str) -> None:
         try:
