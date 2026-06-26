@@ -1,0 +1,10 @@
+# Core
+python-dotenv>=1.0.0      # load config from .env
+groq>=0.11.0              # Groq LLM API client
+pynput>=1.7.7             # global hotkey listener (Option key)
+PySide6>=6.10.0           # Qt-based minimal overlay UI
+
+# --- Phase 2+ (commented until needed) ---
+# openai-whisper          # local STT
+# edge-tts                # optional TTS
+# pyobjc                  # deeper macOS integration (clipboard, app launch)
