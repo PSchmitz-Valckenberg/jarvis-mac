@@ -61,6 +61,12 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Jarvis persistent memory (Phase 3)
+jarvis_memory.db
+jarvis_memory.db-journal
+jarvis_memory.db-wal
+jarvis_memory.db-shm
+
 # Flask stuff:
 instance/
 .webassets-cache

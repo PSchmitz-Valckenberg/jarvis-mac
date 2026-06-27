@@ -8,9 +8,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env from the project root (parent of this package), if present.
-_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(_ENV_PATH)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Load .env from the project root, if present.
+load_dotenv(_PROJECT_ROOT / ".env")
 
 
 def _bool(value: str | None, default: bool = False) -> bool:
@@ -30,9 +31,15 @@ class Config:
     whisper_model: str
     whisper_language: str | None
     min_record_seconds: float
+    memory_enabled: bool
+    memory_db_path: str
 
     @classmethod
     def load(cls) -> "Config":
+        db_path = os.getenv("MEMORY_DB_PATH", "jarvis_memory.db").strip()
+        if not Path(db_path).is_absolute():
+            db_path = str(_PROJECT_ROOT / db_path)
+
         return cls(
             groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),
             groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
@@ -43,6 +50,8 @@ class Config:
             whisper_model=os.getenv("WHISPER_MODEL", "base").strip(),
             whisper_language=os.getenv("WHISPER_LANGUAGE", "").strip() or None,
             min_record_seconds=float(os.getenv("MIN_RECORD_SECONDS", "0.35")),
+            memory_enabled=_bool(os.getenv("MEMORY_ENABLED"), default=True),
+            memory_db_path=db_path,
         )
 
     @property

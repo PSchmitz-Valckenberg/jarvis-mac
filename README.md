@@ -1,8 +1,8 @@
-# Jarvis (macOS) — Phase 2
+# Jarvis (macOS) — Phase 3
 
 A minimal, Mac-style AI overlay. Hold the hotkey and talk, or tap it and
-type — a dark glass panel pops up, Groq answers. Memory and tools come in
-later phases.
+type — a dark glass panel pops up, Groq answers, and it remembers your
+conversation across restarts. Tools come in a later phase.
 
 ```
 hold hotkey (Option)  →  overlay "Listening…"  →  release
@@ -72,14 +72,17 @@ python run.py
 | `WHISPER_MODEL`        | `base`                      | `tiny`/`base`/`small`/`medium`/`large-v3` |
 | `WHISPER_LANGUAGE`     | (auto-detect)               | e.g. `en`, `de` — skips detection   |
 | `MIN_RECORD_SECONDS`   | `0.35`                      | holds shorter than this are ignored |
-| `TTS_ENABLED`          | `false`                     | Phase 3                             |
+| `MEMORY_ENABLED`       | `true`                      | persist conversations across restarts |
+| `MEMORY_DB_PATH`       | `jarvis_memory.db`          | SQLite file, relative to project root |
+| `TTS_ENABLED`          | `false`                     | Phase 4                             |
 
 ## Layout
 
 ```
 jarvis/
   config.py    load .env into one typed Config
-  llm.py       Groq client + short session history
+  llm.py       Groq client + working-memory window, seeded from MemoryStore
+  memory.py    persistent conversation log (SQLite)
   hotkey.py    global Option-key listener (press/release for hold-to-talk)
   voice.py     mic capture (sounddevice) + local STT (faster-whisper)
   overlay.py   frameless translucent Qt panel (text + listening states)
@@ -89,6 +92,5 @@ run.py         entry point
 
 ## Roadmap (next phases)
 
-- Persistent memory (SQLite)
 - Optional TTS (edge-tts)
 - Tools: clipboard, web search, app launcher, screen capture, browser control
