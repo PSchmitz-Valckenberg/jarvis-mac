@@ -37,27 +37,55 @@ class _EdgeTTSBackend:
 
 
 class _ElevenLabsBackend:
-    """Higher-quality voices; free tier is ~10k characters/month."""
+    """Higher-quality voices; free tier is ~10k characters/month.
+
+    eleven_multilingual_v2 (not eleven_monolingual_v1 — that model is
+    English-only and can't speak the German replies/greeting this app uses).
+
+    Only "premade" voices work on the free tier — the Voice Library's
+    shared/community voices return 402 payment_required via the API even
+    though they preview fine on the website. PRESET_VOICES below are all
+    premade and confirmed to work.
+    """
 
     def __init__(self, api_key: str, voice_id: str) -> None:
         from elevenlabs.client import ElevenLabs
+        from elevenlabs.types.voice_settings import VoiceSettings
 
         self._client = ElevenLabs(api_key=api_key)
-        self._voice_id = voice_id
+        self.voice_id = voice_id
+        self._voice_settings = VoiceSettings(
+            stability=config.elevenlabs_stability,
+            similarity_boost=config.elevenlabs_similarity_boost,
+        )
 
     def synthesize(self, text: str, path: Path) -> None:
         try:
             chunks = self._client.text_to_speech.convert(
-                voice_id=self._voice_id,
+                voice_id=self.voice_id,
                 text=text,
                 model_id="eleven_multilingual_v2",
                 output_format="mp3_44100_128",
+                voice_settings=self._voice_settings,
             )
             with path.open("wb") as f:
                 for chunk in chunks:
                     f.write(chunk)
         except Exception as exc:  # noqa: BLE001 — surface any API/network error cleanly
             raise TTSError(f"Couldn't synthesize speech (ElevenLabs): {exc}") from exc
+
+
+# Premade voices confirmed to work on the free API tier — surfaced in the
+# dashboard's voice switcher. (Library/community voices like "Roderich"
+# look identical in the UI but 402 on synthesis without a paid plan.)
+PRESET_VOICES = [
+    {"id": "pNInz6obpgDQGcFmaJgB", "name": "Adam", "label": "Dominant, Firm"},
+    {"id": "onwK4e9ZLuTAKqWW03F9", "name": "Daniel", "label": "Steady Broadcaster"},
+    {"id": "nPczCjzI2devNBz1zQrb", "name": "Brian", "label": "Deep, Resonant, Comforting"},
+    {"id": "IKne3meq5aSn9XLyUdCD", "name": "Charlie", "label": "Deep, Confident, Energetic"},
+    {"id": "pqHfZKP75CvOlQylNhV4", "name": "Bill", "label": "Wise, Mature, Balanced"},
+    {"id": "cjVigY5qzO86Huf0OWal", "name": "Eric", "label": "Smooth, Trustworthy"},
+]
 
 
 def _build_backend():
@@ -80,6 +108,8 @@ class Speaker:
         self._lock = threading.Lock()
         self._backend = _build_backend()
         self._fallback = _EdgeTTSBackend()
+        self._proc: subprocess.Popen | None = None
+        self._proc_lock = threading.Lock()
 
     def speak(self, text: str) -> None:
         text = text.strip()
@@ -89,11 +119,45 @@ class Speaker:
         with self._lock:
             audio_path = self._synthesize(text)
             try:
-                subprocess.run(["afplay", str(audio_path)], check=True)
+                proc = subprocess.Popen(["afplay", str(audio_path)])
+                with self._proc_lock:
+                    self._proc = proc
+                proc.wait()
+                # A non-zero return code here just means interrupt() killed
+                # it on purpose (barge-in) — that's not a playback failure.
             except Exception as exc:  # noqa: BLE001 — surface any playback error cleanly
                 raise TTSError(f"Couldn't play audio: {exc}") from exc
             finally:
+                with self._proc_lock:
+                    self._proc = None
                 audio_path.unlink(missing_ok=True)
+
+    def interrupt(self) -> None:
+        """Stop whatever is currently playing — used for barge-in: holding
+        the hotkey while Jarvis is talking should cut it off immediately."""
+        with self._proc_lock:
+            if self._proc is not None and self._proc.poll() is None:
+                self._proc.terminate()
+
+    def is_elevenlabs_active(self) -> bool:
+        return isinstance(self._backend, _ElevenLabsBackend)
+
+    def current_voice_id(self) -> str | None:
+        if isinstance(self._backend, _ElevenLabsBackend):
+            return self._backend.voice_id
+        return None
+
+    def set_voice(self, voice_id: str) -> bool:
+        """Switch the active ElevenLabs voice for this session.
+
+        Returns False if ElevenLabs isn't the active backend (nothing to
+        switch — edge-tts voices are chosen via TTS_VOICE in .env instead).
+        """
+        if not isinstance(self._backend, _ElevenLabsBackend):
+            return False
+        with self._lock:
+            self._backend.voice_id = voice_id
+        return True
 
     def _synthesize(self, text: str) -> Path:
         fd, path_str = tempfile.mkstemp(suffix=".mp3")
