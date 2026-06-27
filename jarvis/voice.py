@@ -11,6 +11,8 @@ terminal / Python launcher, then try again.
 
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
@@ -37,6 +39,10 @@ class Recorder:
     def __init__(self) -> None:
         self._armed = False
         self._chunks: list[np.ndarray] = []
+        # _chunks is written from PortAudio's callback thread and read/swapped
+        # from the GUI thread in start()/stop() — guard it against a chunk
+        # landing mid-swap at a press/release boundary.
+        self._lock = threading.Lock()
         try:
             self._stream = sd.InputStream(
                 samplerate=SAMPLE_RATE,
@@ -51,16 +57,19 @@ class Recorder:
 
     def _on_audio(self, indata: np.ndarray, frames: int, time_info, status) -> None:
         if self._armed:
-            self._chunks.append(indata.copy())
+            with self._lock:
+                self._chunks.append(indata.copy())
 
     def start(self) -> None:
-        self._chunks = []
+        with self._lock:
+            self._chunks = []
         self._armed = True
 
     def stop(self) -> np.ndarray:
         """Stop capture and return the recorded audio as a flat float32 array."""
         self._armed = False
-        chunks, self._chunks = self._chunks, []
+        with self._lock:
+            chunks, self._chunks = self._chunks, []
         if not chunks:
             return np.empty(0, dtype="float32")
         return np.concatenate(chunks, axis=0).reshape(-1)

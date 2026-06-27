@@ -187,6 +187,12 @@ class Overlay(QWidget):
         self._status.hide()
         self._input.setEnabled(True)
         self._show_reply(f"⚠️  {message}")
+        # If the mic failed before the overlay was ever shown (e.g. at
+        # startup), this is the only thing that puts it on screen — without
+        # it, the user gets no UI at all and no way to fall back to typing.
+        self.show()
+        self.raise_()
+        self.activateWindow()
         self._input.setFocus()
 
     def _worker(self, prompt: str) -> None:
