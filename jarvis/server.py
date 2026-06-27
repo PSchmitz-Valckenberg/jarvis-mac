@@ -175,6 +175,10 @@ class JarvisBackend:
             hub.broadcast({"type": "error", "message": str(exc)})
             hub.broadcast({"type": "state", "state": "idle"})
             return
+        except Exception as exc:  # noqa: BLE001 — never leave the dashboard stuck "thinking"
+            hub.broadcast({"type": "error", "message": f"Unexpected error: {exc}"})
+            hub.broadcast({"type": "state", "state": "idle"})
+            return
 
         hub.broadcast({"type": "reply", "text": reply})
 
@@ -212,15 +216,17 @@ backend = JarvisBackend()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     hub.bind_loop(asyncio.get_running_loop())
-    # "Before anything else": greet, then start listening. speak_greeting()
-    # uses asyncio.run() internally (edge-tts), which can't be called from
-    # this already-running event loop — run it in a plain thread and join,
-    # which keeps the ordering (greeting fully finishes first) without that
-    # conflict.
-    greeting = threading.Thread(target=backend.speak_greeting)
-    greeting.start()
-    greeting.join()
-    backend.start()
+
+    def _startup_sequence() -> None:
+        # Greet before the hotkey listener goes live (so a hold during the
+        # greeting can't race with it), but do this in the background:
+        # blocking the lifespan itself here would hold up uvicorn's startup,
+        # leaving the dashboard's first WebSocket/HTTP calls hanging for
+        # however long TTS synthesis + playback takes.
+        backend.speak_greeting()
+        backend.start()
+
+    threading.Thread(target=_startup_sequence, daemon=True).start()
     try:
         yield
     finally:

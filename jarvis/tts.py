@@ -100,11 +100,19 @@ class Speaker:
         os.close(fd)
         path = Path(path_str)
         try:
-            self._backend.synthesize(text, path)
+            try:
+                self._backend.synthesize(text, path)
+            except TTSError:
+                if isinstance(self._backend, _EdgeTTSBackend):
+                    raise
+                # ElevenLabs failed (quota exhausted, network, bad key) —
+                # don't let that silence Jarvis entirely, drop back to the
+                # free tier.
+                self._fallback.synthesize(text, path)
         except TTSError:
-            if isinstance(self._backend, _EdgeTTSBackend):
-                raise
-            # ElevenLabs failed (quota exhausted, network, bad key) — don't
-            # let that silence Jarvis entirely, drop back to the free tier.
-            self._fallback.synthesize(text, path)
+            # mkstemp already created this file on disk; if synthesis never
+            # succeeds (both backends failed), nothing downstream ever gets
+            # a chance to unlink it — clean up here instead of leaking it.
+            path.unlink(missing_ok=True)
+            raise
         return path
