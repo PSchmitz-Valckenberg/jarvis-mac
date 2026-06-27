@@ -27,6 +27,9 @@ class Config:
     max_tokens: int
     hotkey: str
     tts_enabled: bool
+    whisper_model: str
+    whisper_language: str | None
+    min_record_seconds: float
 
     @classmethod
     def load(cls) -> "Config":
@@ -37,6 +40,9 @@ class Config:
             max_tokens=int(os.getenv("MAX_TOKENS", "1024")),
             hotkey=os.getenv("HOTKEY", "alt").strip().lower(),
             tts_enabled=_bool(os.getenv("TTS_ENABLED"), default=False),
+            whisper_model=os.getenv("WHISPER_MODEL", "base").strip(),
+            whisper_language=os.getenv("WHISPER_LANGUAGE", "").strip() or None,
+            min_record_seconds=float(os.getenv("MIN_RECORD_SECONDS", "0.35")),
         )
 
     @property

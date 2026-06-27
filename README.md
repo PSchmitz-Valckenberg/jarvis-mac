@@ -1,13 +1,23 @@
-# Jarvis (macOS) — Phase 1
+# Jarvis (macOS) — Phase 2
 
-A minimal, Mac-style AI overlay. Tap a hotkey, a dark glass panel pops up,
-you type, and Groq answers. Voice, memory and tools come in later phases.
+A minimal, Mac-style AI overlay. Hold the hotkey and talk, or tap it and
+type — a dark glass panel pops up, Groq answers. Memory and tools come in
+later phases.
 
 ```
-hotkey (Option)  →  overlay  →  text  →  Groq LLM  →  reply
+hold hotkey (Option)  →  overlay "Listening…"  →  release
+    →  local Whisper STT  →  Groq LLM  →  reply
+
+tap hotkey  →  overlay opens for typed text  →  Groq LLM  →  reply
 ```
 
 ## Setup
+
+`sounddevice` needs the system PortAudio library to talk to the microphone:
+
+```bash
+brew install portaudio
+```
 
 ```bash
 python3 -m venv .venv
@@ -19,11 +29,24 @@ cp .env.example .env        # then add your GROQ_API_KEY
 
 Get a free key at <https://console.groq.com/keys>.
 
-## macOS permission (required)
+## macOS permissions (required)
 
-Global key capture needs Accessibility access. Go to
-**System Settings → Privacy & Security → Accessibility** and enable your
-terminal (e.g. Terminal/iTerm) or the Python launcher. Restart the app after.
+- **Accessibility** — global key capture needs it. System Settings →
+  Privacy & Security → Accessibility → enable your terminal (e.g.
+  Terminal/iTerm) or the Python launcher.
+- **Input Monitoring** — a *separate* permission global hotkey listeners
+  also need on macOS. System Settings → Privacy & Security → Input
+  Monitoring → enable the same app. Without this, hold-to-talk can look
+  like it's "working" but get the press/release timing wrong.
+- **Microphone** — voice input needs it. macOS prompts the first time the
+  app opens the mic (at startup); if you miss it, add your terminal under
+  System Settings → Privacy & Security → Microphone.
+
+Each of these is granted **per app** — if you run Jarvis from a different
+terminal (e.g. switching from Terminal.app to VS Code's integrated
+terminal), you'll need to grant all three again for that app.
+
+Restart the app after granting either permission.
 
 ## Run
 
@@ -31,19 +54,25 @@ terminal (e.g. Terminal/iTerm) or the Python launcher. Restart the app after.
 python run.py
 ```
 
-Tap **Option** to summon the overlay. Type a question, **Enter** to send,
-**Esc** to dismiss. Tap Option again to toggle it away.
+- **Hold Option** to talk. Release when done — Jarvis transcribes locally
+  and sends it to Groq. The first hold downloads the Whisper model
+  (one-time, a few hundred MB depending on `WHISPER_MODEL`).
+- **Tap Option** (quick press) to open the overlay for typed input instead.
+  **Enter** to send, **Esc** to dismiss.
 
 ## Config (`.env`)
 
-| Key             | Default                     | Notes                        |
-|-----------------|-----------------------------|------------------------------|
-| `GROQ_API_KEY`  | —                           | required                     |
-| `GROQ_MODEL`    | `llama-3.3-70b-versatile`   | swap freely                  |
-| `TEMPERATURE`   | `0.6`                       |                              |
-| `MAX_TOKENS`    | `1024`                      |                              |
-| `HOTKEY`        | `alt`                       | `alt`=Option, also `cmd`, `f9`… |
-| `TTS_ENABLED`   | `false`                     | Phase 2                      |
+| Key                   | Default                     | Notes                              |
+|------------------------|-----------------------------|-------------------------------------|
+| `GROQ_API_KEY`         | —                           | required                            |
+| `GROQ_MODEL`           | `llama-3.3-70b-versatile`   | swap freely                         |
+| `TEMPERATURE`          | `0.6`                       |                                      |
+| `MAX_TOKENS`           | `1024`                      |                                      |
+| `HOTKEY`               | `alt`                       | `alt`=Option, also `cmd`, `f9`…     |
+| `WHISPER_MODEL`        | `base`                      | `tiny`/`base`/`small`/`medium`/`large-v3` |
+| `WHISPER_LANGUAGE`     | (auto-detect)               | e.g. `en`, `de` — skips detection   |
+| `MIN_RECORD_SECONDS`   | `0.35`                      | holds shorter than this are ignored |
+| `TTS_ENABLED`          | `false`                     | Phase 3                             |
 
 ## Layout
 
@@ -51,15 +80,15 @@ Tap **Option** to summon the overlay. Type a question, **Enter** to send,
 jarvis/
   config.py    load .env into one typed Config
   llm.py       Groq client + short session history
-  hotkey.py    global Option-key listener (press/release split for voice)
-  overlay.py   frameless translucent Qt panel
-  app.py       wires hotkey → overlay → LLM
+  hotkey.py    global Option-key listener (press/release for hold-to-talk)
+  voice.py     mic capture (sounddevice) + local STT (faster-whisper)
+  overlay.py   frameless translucent Qt panel (text + listening states)
+  app.py       wires hotkey → voice/text → LLM
 run.py         entry point
 ```
 
 ## Roadmap (next phases)
 
-- Voice in (local Whisper STT, hold-Option-to-record)
 - Persistent memory (SQLite)
 - Optional TTS (edge-tts)
 - Tools: clipboard, web search, app launcher, screen capture, browser control

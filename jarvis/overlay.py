@@ -10,8 +10,8 @@ from __future__ import annotations
 import threading
 from typing import Callable
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QRect, Qt, Signal
+from PySide6.QtGui import QFontMetrics, QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -20,6 +20,23 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from .config import config
+
+# Symbols for the hotkeys that have one; anything else falls back to its
+# config name (e.g. "f9") so the hint never lies about the configured key.
+_HOTKEY_SYMBOLS = {
+    "alt": "⌥",
+    "option": "⌥",
+    "cmd": "⌘",
+    "ctrl": "⌃",
+    "shift": "⇧",
+}
+
+
+def _hotkey_label() -> str:
+    return _HOTKEY_SYMBOLS.get(config.hotkey, config.hotkey)
+
 
 # Mac-style dark glass look. Colors kept in one place for easy theming.
 _STYLE = """
@@ -43,6 +60,7 @@ _STYLE = """
     padding: 2px;
 }
 #hint { color: rgba(235, 235, 245, 0.30); font-size: 11px; }
+#status { color: rgba(235, 235, 245, 0.55); font-size: 14px; padding: 6px 2px; }
 """
 
 
@@ -89,14 +107,25 @@ class Overlay(QWidget):
         self._input.returnPressed.connect(self._submit)
         layout.addWidget(self._input)
 
+        self._status = QLabel(card)
+        self._status.setObjectName("status")
+        self._status.hide()
+        layout.addWidget(self._status)
+
         self._reply = QLabel(card)
         self._reply.setObjectName("reply")
         self._reply.setWordWrap(True)
         self._reply.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        # Fix the wrap width up front. QLabel's wrapped-text height depends on
+        # its width, and without this it can report a stale (too small)
+        # sizeHint right after show(), before the layout has settled —
+        # causing the reply to overlap the hint line below it.
+        margins = layout.contentsMargins()
+        self._reply.setFixedWidth(self.width() - margins.left() - margins.right())
         self._reply.hide()
         layout.addWidget(self._reply)
 
-        self._hint = QLabel("Enter to send · Esc to close", card)
+        self._hint = QLabel(f"Enter to send · Esc to close · hold {_hotkey_label()} to talk", card)
         self._hint.setObjectName("hint")
         layout.addWidget(self._hint)
 
@@ -110,6 +139,61 @@ class Overlay(QWidget):
 
         # Run the (blocking) network call off the GUI thread.
         threading.Thread(target=self._worker, args=(prompt,), daemon=True).start()
+
+    # ── Voice (hold-to-talk) ───────────────────────────────────────
+    def show_listening(self) -> None:
+        """Hold started: show the overlay in a recording state."""
+        self._reply.hide()
+        self._input.clear()
+        self._input.setEnabled(False)
+        self._status.setText("🔴 Listening…")
+        self._status.show()
+        self.adjustSize()
+        self._reposition()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def show_transcribing(self) -> None:
+        """Hold released: recording stopped, now running STT."""
+        self._status.setText("Transcribing…")
+
+    def cancel_listening(self) -> None:
+        """Hold was too short — drop back to normal text-input mode."""
+        self._status.hide()
+        self._input.setEnabled(True)
+        self.adjustSize()
+        self._reposition()
+        self._input.setFocus()
+
+    def submit_voice_text(self, text: str) -> None:
+        """Transcription succeeded: show what was heard, then send it."""
+        text = text.strip()
+        self._input.setEnabled(True)
+        if not text:
+            self._status.hide()
+            self._show_reply("(didn't catch that — try again)")
+            self._input.setFocus()
+            return
+        # Keep the heard text visible (it survives the reply lifecycle, so
+        # you can tell whether the STT misheard you instead of just getting
+        # a confusing reply with no context).
+        self._status.setText(f"🎤 “{text}”")
+        self._status.show()
+        self._input.setText(text)
+        self._submit()
+
+    def show_voice_error(self, message: str) -> None:
+        self._status.hide()
+        self._input.setEnabled(True)
+        self._show_reply(f"⚠️  {message}")
+        # If the mic failed before the overlay was ever shown (e.g. at
+        # startup), this is the only thing that puts it on screen — without
+        # it, the user gets no UI at all and no way to fall back to typing.
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._input.setFocus()
 
     def _worker(self, prompt: str) -> None:
         try:
@@ -130,6 +214,25 @@ class Overlay(QWidget):
 
     def _show_reply(self, text: str) -> None:
         self._reply.setText(text)
+        # Compute the wrapped height directly from font metrics instead of
+        # trusting QLabel's sizeHint() — on a label that's never been
+        # painted yet, sizeHint() can report a stale, too-short height,
+        # which made multi-line replies overlap the hint line below them.
+        # ensurePolished() makes the stylesheet's font-size actually land on
+        # self._reply.font() before we measure it — without it, the very
+        # first measurement on a real (non-offscreen) platform can still be
+        # using the pre-stylesheet default font and undershoot.
+        self._reply.ensurePolished()
+        metrics = QFontMetrics(self._reply.font())
+        bounds = metrics.boundingRect(
+            QRect(0, 0, self._reply.width(), 0),
+            Qt.TextFlag.TextWordWrap,
+            text,
+        )
+        # Generous safety margin: real-platform font rendering (Retina,
+        # ligatures, the CSS padding) has measured a bit taller than plain
+        # font-metrics math predicts.
+        self._reply.setFixedHeight(int(bounds.height() * 1.25) + 16)
         self._reply.show()
         self.adjustSize()
         self._reposition()
@@ -140,18 +243,6 @@ class Overlay(QWidget):
         x = screen.x() + (screen.width() - self.width()) // 2
         y = screen.y() + int(screen.height() * 0.22)
         self.move(x, y)
-
-    def pop_up(self) -> None:
-        """Show, center, and grab keyboard focus."""
-        self._reply.hide()
-        self._input.clear()
-        self._input.setEnabled(True)
-        self.adjustSize()
-        self._reposition()
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        self._input.setFocus()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 — Qt override
         if event.key() == Qt.Key.Key_Escape:
