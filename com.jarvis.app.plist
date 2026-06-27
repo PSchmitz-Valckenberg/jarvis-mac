@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jarvis.app</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/by/jarvis-mac/start.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/by/jarvis-mac</string>
+
+    <!-- Start once when you log in; don't restart it if you quit it. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/by/jarvis-mac/jarvis.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/by/jarvis-mac/jarvis.err.log</string>
+</dict>
+</plist>

@@ -2,7 +2,6 @@
 python-dotenv>=1.0.0      # load config from .env
 groq>=0.11.0              # Groq LLM API client
 pynput>=1.7.7             # global hotkey listener (Option key)
-PySide6>=6.10.0           # Qt-based minimal overlay UI
 
 # Voice (Phase 2)
 faster-whisper>=1.0.3     # local STT (CTranslate2, CPU-friendly)
@@ -11,6 +10,11 @@ numpy>=1.26.0             # audio buffer handling
 
 # Text-to-speech (Phase 4)
 edge-tts>=6.1.0           # free online TTS; playback via macOS's built-in afplay
+elevenlabs>=2.0.0         # higher-quality TTS (optional, free tier ~10k chars/mo)
 
-# --- Phase 5+ (commented until needed) ---
+# Dashboard backend bridge (Phase 5) — the Electron/React UI talks to this
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# --- Phase 6+ (commented until needed) ---
 # pyobjc                  # deeper macOS integration (clipboard, app launch)

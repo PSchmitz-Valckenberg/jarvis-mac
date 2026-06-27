@@ -1,8 +1,8 @@
 """Global hotkey listener.
 
-Phase 1: a *tap* on the configured key (default macOS Option/alt) opens the
-overlay. The press/release split is kept so Phase 2 voice can use
-hold-to-listen ("hold Option -> record -> release") without rewiring.
+A *tap* on the configured key (default macOS Option/alt) is treated as
+typed-input mode; holding it down drives hold-to-talk voice capture. The
+press/release split lets the same listener serve both without rewiring.
 
 NOTE: macOS requires Accessibility permission for global key capture.
 Grant it under System Settings -> Privacy & Security -> Accessibility for

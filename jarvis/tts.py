@@ -1,8 +1,7 @@
-"""Optional text-to-speech via edge-tts.
+"""Optional text-to-speech: ElevenLabs first, edge-tts as a free fallback.
 
-Synthesizes speech with Microsoft Edge's free online TTS service, then
-plays it back with macOS's built-in `afplay` — no local audio-decoding
-dependency needed beyond that system command.
+Both backends just need to produce an mp3 file; playback is shared via
+macOS's built-in `afplay` — no local audio-decoding dependency needed.
 """
 
 from __future__ import annotations
@@ -23,6 +22,55 @@ class TTSError(Exception):
     """Raised when speech synthesis or playback fails."""
 
 
+class _EdgeTTSBackend:
+    """Free, no API key — used by default and as the ElevenLabs fallback."""
+
+    def synthesize(self, text: str, path: Path) -> None:
+        try:
+            asyncio.run(self._save(text, path))
+        except Exception as exc:  # noqa: BLE001 — surface any network/synthesis error cleanly
+            raise TTSError(f"Couldn't synthesize speech (edge-tts): {exc}") from exc
+
+    async def _save(self, text: str, path: Path) -> None:
+        communicate = edge_tts.Communicate(text, config.tts_voice)
+        await communicate.save(str(path))
+
+
+class _ElevenLabsBackend:
+    """Higher-quality voices; free tier is ~10k characters/month."""
+
+    def __init__(self, api_key: str, voice_id: str) -> None:
+        from elevenlabs.client import ElevenLabs
+
+        self._client = ElevenLabs(api_key=api_key)
+        self._voice_id = voice_id
+
+    def synthesize(self, text: str, path: Path) -> None:
+        try:
+            chunks = self._client.text_to_speech.convert(
+                voice_id=self._voice_id,
+                text=text,
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128",
+            )
+            with path.open("wb") as f:
+                for chunk in chunks:
+                    f.write(chunk)
+        except Exception as exc:  # noqa: BLE001 — surface any API/network error cleanly
+            raise TTSError(f"Couldn't synthesize speech (ElevenLabs): {exc}") from exc
+
+
+def _build_backend():
+    """Pick ElevenLabs if configured, otherwise edge-tts.
+
+    Also falls back to edge-tts if ElevenLabs synthesis ever fails at
+    runtime (e.g. the free quota runs out mid-month) — see Speaker.speak().
+    """
+    if config.elevenlabs_api_key and config.elevenlabs_voice_id:
+        return _ElevenLabsBackend(config.elevenlabs_api_key, config.elevenlabs_voice_id)
+    return _EdgeTTSBackend()
+
+
 class Speaker:
     """Synthesizes text to speech and plays it back, one utterance at a time."""
 
@@ -30,6 +78,8 @@ class Speaker:
         # Two replies arriving close together (e.g. quick follow-up voice
         # questions) would otherwise start overlapping afplay processes.
         self._lock = threading.Lock()
+        self._backend = _build_backend()
+        self._fallback = _EdgeTTSBackend()
 
     def speak(self, text: str) -> None:
         text = text.strip()
@@ -50,12 +100,11 @@ class Speaker:
         os.close(fd)
         path = Path(path_str)
         try:
-            asyncio.run(self._save(text, path))
-        except Exception as exc:  # noqa: BLE001 — surface any network/synthesis error cleanly
-            path.unlink(missing_ok=True)
-            raise TTSError(f"Couldn't synthesize speech: {exc}") from exc
+            self._backend.synthesize(text, path)
+        except TTSError:
+            if isinstance(self._backend, _EdgeTTSBackend):
+                raise
+            # ElevenLabs failed (quota exhausted, network, bad key) — don't
+            # let that silence Jarvis entirely, drop back to the free tier.
+            self._fallback.synthesize(text, path)
         return path
-
-    async def _save(self, text: str, path: Path) -> None:
-        communicate = edge_tts.Communicate(text, config.tts_voice)
-        await communicate.save(str(path))
