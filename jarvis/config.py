@@ -36,9 +36,11 @@ class Config:
 
     @classmethod
     def load(cls) -> "Config":
-        db_path = os.getenv("MEMORY_DB_PATH", "jarvis_memory.db").strip()
-        if not Path(db_path).is_absolute():
-            db_path = str(_PROJECT_ROOT / db_path)
+        db_path = os.getenv("MEMORY_DB_PATH", "").strip() or "jarvis_memory.db"
+        db_path = Path(db_path).expanduser()
+        if not db_path.is_absolute():
+            db_path = _PROJECT_ROOT / db_path
+        db_path = str(db_path)
 
         return cls(
             groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),

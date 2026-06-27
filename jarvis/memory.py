@@ -31,11 +31,18 @@ class MemoryStore:
             )
             self._conn.commit()
 
-    def add(self, role: str, content: str) -> None:
+    def add_turn(self, user_content: str, assistant_content: str) -> None:
+        """Insert a user+assistant pair as a single transaction.
+
+        Writing them separately would commit twice per turn and risk a
+        partial write (user saved, assistant insert fails) if anything goes
+        wrong in between.
+        """
+        now = time.time()
         with self._lock:
-            self._conn.execute(
+            self._conn.executemany(
                 "INSERT INTO messages (role, content, created_at) VALUES (?, ?, ?)",
-                (role, content, time.time()),
+                [("user", user_content, now), ("assistant", assistant_content, now)],
             )
             self._conn.commit()
 

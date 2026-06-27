@@ -72,8 +72,12 @@ class Brain:
         self._history = self._history[-self._max_history:]
 
         if self._memory is not None:
-            self._memory.add("user", prompt)
-            self._memory.add("assistant", reply)
+            # Best-effort: a reply the user already has shouldn't turn into
+            # an error just because the disk write behind it failed.
+            try:
+                self._memory.add_turn(prompt, reply)
+            except Exception as exc:  # noqa: BLE001
+                print(f"⚠️  Couldn't persist this turn to memory: {exc}")
 
         return reply
 
@@ -81,4 +85,7 @@ class Brain:
         """Forget the conversation — current session and persisted history."""
         self._history.clear()
         if self._memory is not None:
-            self._memory.clear()
+            try:
+                self._memory.clear()
+            except Exception as exc:  # noqa: BLE001 — best-effort, see ask()
+                print(f"⚠️  Couldn't clear persisted memory: {exc}")
