@@ -16,6 +16,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import config
 from .hotkey import HotkeyListener
@@ -227,6 +228,18 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# The dashboard runs from a different origin (Vite's localhost:5173 in dev,
+# file:// once built) than this server (127.0.0.1:8765) — without this,
+# the browser silently drops every /api/* response and the dashboard's
+# status panels show nothing despite the server logging 200s. Only ever
+# bound to 127.0.0.1, so a permissive origin policy here is low-risk.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/api/status")

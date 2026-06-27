@@ -47,20 +47,47 @@ npm install
 
 ## macOS permissions (required)
 
-- **Accessibility** — global key capture needs it. System Settings →
-  Privacy & Security → Accessibility → enable your terminal (or, once
-  running via `start.sh`/launchd, the Electron app itself).
-- **Input Monitoring** — a *separate* permission global hotkey listeners
-  also need on macOS. System Settings → Privacy & Security → Input
-  Monitoring → enable the same app. Without this, hold-to-talk can look
-  like it's "working" but get the press/release timing wrong.
-- **Microphone** — voice input needs it. macOS prompts the first time the
-  app opens the mic (at startup); if you miss it, add the app under
-  System Settings → Privacy & Security → Microphone.
+Electron spawns the Python backend as its own OS process, and the hotkey
+listener (pynput) runs *inside that Python process* — so both **Electron**
+and the actual Python binary need Accessibility + Input Monitoring, not
+just Electron. Find the real Python binary with:
 
-Each of these is granted **per app** — switching how you launch Jarvis
-(Terminal vs. VS Code vs. the packaged Electron app) means granting all
-three again for that app. Restart after granting.
+```bash
+.venv/bin/python3 -c "import sys; print(sys.executable)"
+```
+
+(On Homebrew's framework build this resolves to a `Python.app` bundle
+inside the framework, not a bare `python3` binary — add *that* `.app`.)
+
+- **Accessibility** — System Settings → Privacy & Security →
+  Accessibility → add both `Electron.app`
+  (`electron/node_modules/electron/dist/Electron.app`) and the `Python.app`
+  from above.
+- **Input Monitoring** — same two apps, under System Settings → Privacy &
+  Security → Input Monitoring. Without this, hold-to-talk can look like
+  it's "working" but only ever fire the press, never the release.
+- **Microphone** — voice input needs it. macOS prompts the first time the
+  app opens the mic (at startup). There's no manual "+" here — it only
+  populates after a real access attempt, so if it's missing, just (re)launch
+  Jarvis once.
+
+Each of these is granted **per app/binary** — switching how you launch
+Jarvis (Terminal vs. VS Code vs. Electron vs. a packaged build) means
+granting all of them again for that app. Restart after granting.
+
+**If you've granted everything and it still doesn't work** (warning
+persists, only `PRESS` ever fires, never `RELEASE`): the TCC database
+itself can get into a stale state where the UI shows a permission as
+granted but it isn't actually honored. Reset and re-grant from scratch:
+
+```bash
+tccutil reset Accessibility
+tccutil reset ListenEvent
+```
+
+This wipes *every* app's grant for both permissions (Terminal, VS Code,
+Discord, everything) — you'll need to re-add all of them, but it forces a
+real, fresh system prompt instead of a stale cached decision.
 
 ## Run
 
