@@ -45,6 +45,7 @@ class JarvisApp:
         self.overlay = Overlay(ask=ask)
         self.recorder, self._recorder_error = self._build_recorder()
         self._transcriber: Transcriber | None = None  # lazy: model load is slow
+        self._transcribe_lock = threading.Lock()  # the model isn't thread-safe
         self._recording_started_at: float | None = None
 
         self.bridge = _Bridge()
@@ -108,10 +109,14 @@ class JarvisApp:
         threading.Thread(target=self._transcribe_worker, args=(audio,), daemon=True).start()
 
     def _transcribe_worker(self, audio) -> None:
+        # A follow-up hold can start a second worker while one is still
+        # transcribing; the model isn't safe for concurrent use, so only
+        # one transcription runs at a time.
         try:
-            if self._transcriber is None:
-                self._transcriber = Transcriber()
-            text = self._transcriber.transcribe(audio)
+            with self._transcribe_lock:
+                if self._transcriber is None:
+                    self._transcriber = Transcriber()
+                text = self._transcriber.transcribe(audio)
             self.bridge.transcribed.emit(text)
         except VoiceError as exc:
             self.bridge.transcribe_error.emit(str(exc))

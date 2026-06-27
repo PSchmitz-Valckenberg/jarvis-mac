@@ -21,6 +21,23 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .config import config
+
+# Symbols for the hotkeys that have one; anything else falls back to its
+# config name (e.g. "f9") so the hint never lies about the configured key.
+_HOTKEY_SYMBOLS = {
+    "alt": "⌥",
+    "option": "⌥",
+    "cmd": "⌘",
+    "ctrl": "⌃",
+    "shift": "⇧",
+}
+
+
+def _hotkey_label() -> str:
+    return _HOTKEY_SYMBOLS.get(config.hotkey, config.hotkey)
+
+
 # Mac-style dark glass look. Colors kept in one place for easy theming.
 _STYLE = """
 #card {
@@ -108,7 +125,7 @@ class Overlay(QWidget):
         self._reply.hide()
         layout.addWidget(self._reply)
 
-        self._hint = QLabel("Enter to send · Esc to close · hold ⌥ to talk", card)
+        self._hint = QLabel(f"Enter to send · Esc to close · hold {_hotkey_label()} to talk", card)
         self._hint.setObjectName("hint")
         layout.addWidget(self._hint)
 
@@ -145,6 +162,8 @@ class Overlay(QWidget):
         """Hold was too short — drop back to normal text-input mode."""
         self._status.hide()
         self._input.setEnabled(True)
+        self.adjustSize()
+        self._reposition()
         self._input.setFocus()
 
     def submit_voice_text(self, text: str) -> None:

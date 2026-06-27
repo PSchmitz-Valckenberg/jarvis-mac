@@ -13,6 +13,12 @@ tap hotkey  →  overlay opens for typed text  →  Groq LLM  →  reply
 
 ## Setup
 
+`sounddevice` needs the system PortAudio library to talk to the microphone:
+
+```bash
+brew install portaudio
+```
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -28,9 +34,17 @@ Get a free key at <https://console.groq.com/keys>.
 - **Accessibility** — global key capture needs it. System Settings →
   Privacy & Security → Accessibility → enable your terminal (e.g.
   Terminal/iTerm) or the Python launcher.
-- **Microphone** — voice input needs it. macOS will prompt the first time
-  you hold the hotkey; if you miss it, add your terminal under System
-  Settings → Privacy & Security → Microphone.
+- **Input Monitoring** — a *separate* permission global hotkey listeners
+  also need on macOS. System Settings → Privacy & Security → Input
+  Monitoring → enable the same app. Without this, hold-to-talk can look
+  like it's "working" but get the press/release timing wrong.
+- **Microphone** — voice input needs it. macOS prompts the first time the
+  app opens the mic (at startup); if you miss it, add your terminal under
+  System Settings → Privacy & Security → Microphone.
+
+Each of these is granted **per app** — if you run Jarvis from a different
+terminal (e.g. switching from Terminal.app to VS Code's integrated
+terminal), you'll need to grant all three again for that app.
 
 Restart the app after granting either permission.
 
