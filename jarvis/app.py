@@ -22,6 +22,7 @@ from PySide6.QtWidgets import QApplication
 from .config import config
 from .hotkey import HotkeyListener
 from .llm import Brain, LLMError
+from .memory import MemoryStore
 from .overlay import Overlay
 from .voice import Recorder, Transcriber, VoiceError
 
@@ -62,8 +63,9 @@ class JarvisApp:
 
     def _build_ask(self):
         """Return an ask(prompt)->str callable, or one that reports setup errors."""
+        self.memory = self._build_memory()
         try:
-            brain = Brain()
+            brain = Brain(memory=self.memory)
             return brain.ask
         except LLMError as exc:
             message = str(exc)
@@ -72,6 +74,20 @@ class JarvisApp:
                 raise LLMError(message)
 
             return _broken
+
+    def _build_memory(self) -> MemoryStore | None:
+        """Return a MemoryStore, or None if memory is disabled/unavailable.
+
+        Persistence is best-effort: a broken DB file shouldn't stop the app
+        from working, just mean it starts each session with a blank slate.
+        """
+        if not config.memory_enabled:
+            return None
+        try:
+            return MemoryStore(config.memory_db_path)
+        except Exception as exc:  # noqa: BLE001 — degrade gracefully, don't crash startup
+            print(f"⚠️  Persistent memory unavailable: {exc}")
+            return None
 
     def _build_recorder(self):
         """Return (Recorder, None) or (None, error message) if the mic can't open."""
@@ -143,6 +159,8 @@ class JarvisApp:
             self.listener.stop()
             if self.recorder is not None:
                 self.recorder.close()
+            if self.memory is not None:
+                self.memory.close()
 
 
 def main() -> int:
