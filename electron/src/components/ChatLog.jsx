@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 function roleLabel(role) {
   if (role === "user") return "YOU";
   if (role === "assistant") return "JARVIS";
+  if (role === "tool") return "TOOL";
   return "SYS";
 }
 

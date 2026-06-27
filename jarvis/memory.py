@@ -2,14 +2,27 @@
 
 Every turn gets appended to a local SQLite file, so Jarvis can pick a
 conversation back up after a restart instead of starting blank each time.
+
+Also holds the structured user profile (Phase 3) — projects, goals,
+patterns, preferences — in the same file, since it's small, single-row,
+and tied to the same lifetime as the raw conversation log.
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
 from pathlib import Path
+from typing import Any
+
+DEFAULT_PROFILE: dict[str, Any] = {
+    "projects": {},
+    "goals": [],
+    "daily_patterns": {},
+    "preferences": {},
+}
 
 
 class MemoryStore:
@@ -26,6 +39,14 @@ class MemoryStore:
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
                     created_at REAL NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS profile (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    data TEXT NOT NULL
                 )
                 """
             )
@@ -59,6 +80,27 @@ class MemoryStore:
         """Forget everything — used when the user explicitly resets memory."""
         with self._lock:
             self._conn.execute("DELETE FROM messages")
+            self._conn.commit()
+
+    def get_profile(self) -> dict[str, Any]:
+        """The structured profile (projects/goals/patterns/preferences)."""
+        with self._lock:
+            row = self._conn.execute("SELECT data FROM profile WHERE id = 1").fetchone()
+        if row is None:
+            return json.loads(json.dumps(DEFAULT_PROFILE))  # deep copy, not the shared default
+        try:
+            return json.loads(row[0])
+        except json.JSONDecodeError:
+            return json.loads(json.dumps(DEFAULT_PROFILE))
+
+    def set_profile(self, profile: dict[str, Any]) -> None:
+        payload = json.dumps(profile, ensure_ascii=False)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO profile (id, data) VALUES (1, ?) "
+                "ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+                (payload,),
+            )
             self._conn.commit()
 
     def close(self) -> None:

@@ -49,7 +49,7 @@ export default function App() {
           <SystemPanel status={status} connected={connected} />
           <VoicePanel />
           <MemoryPanel status={status} />
-          <ToolsPanel />
+          <ToolsPanel status={status} />
         </div>
       </div>
 

@@ -20,6 +20,18 @@ def _bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _optional_float(value: str | None) -> float | None:
+    value = (value or "").strip()
+    return float(value) if value else None
+
+
+def _csv_list(value: str | None) -> list[str]:
+    value = (value or "").strip()
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 @dataclass(frozen=True)
 class Config:
     groq_api_key: str
@@ -38,6 +50,23 @@ class Config:
     min_record_seconds: float
     memory_enabled: bool
     memory_db_path: str
+    tools_enabled: bool
+    tavily_api_key: str
+    vision_model: str
+    proactivity_enabled: bool
+    morning_brief_enabled: bool
+    morning_brief_time: str
+    github_watch_enabled: bool
+    github_repos: list[str]
+    github_watch_interval_minutes: int
+    idle_nudge_enabled: bool
+    idle_nudge_minutes: int
+    weather_latitude: float | None
+    weather_longitude: float | None
+    tasks_file: str | None
+    profile_enabled: bool
+    profile_extraction_model: str
+    camera_index: int
 
     @classmethod
     def load(cls) -> "Config":
@@ -71,6 +100,27 @@ class Config:
             min_record_seconds=float(os.getenv("MIN_RECORD_SECONDS", "0.35")),
             memory_enabled=_bool(os.getenv("MEMORY_ENABLED"), default=True),
             memory_db_path=db_path,
+            tools_enabled=_bool(os.getenv("TOOLS_ENABLED"), default=True),
+            tavily_api_key=os.getenv("TAVILY_API_KEY", "").strip(),
+            vision_model=os.getenv(
+                "VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"
+            ).strip(),
+            proactivity_enabled=_bool(os.getenv("PROACTIVITY_ENABLED"), default=True),
+            morning_brief_enabled=_bool(os.getenv("MORNING_BRIEF_ENABLED"), default=True),
+            morning_brief_time=os.getenv("MORNING_BRIEF_TIME", "07:30").strip(),
+            github_watch_enabled=_bool(os.getenv("GITHUB_WATCH_ENABLED"), default=True),
+            github_repos=_csv_list(os.getenv("GITHUB_REPOS")),
+            github_watch_interval_minutes=int(os.getenv("GITHUB_WATCH_INTERVAL_MINUTES", "30")),
+            idle_nudge_enabled=_bool(os.getenv("IDLE_NUDGE_ENABLED"), default=True),
+            idle_nudge_minutes=int(os.getenv("IDLE_NUDGE_MINUTES", "120")),
+            weather_latitude=_optional_float(os.getenv("WEATHER_LATITUDE")),
+            weather_longitude=_optional_float(os.getenv("WEATHER_LONGITUDE")),
+            tasks_file=os.getenv("TASKS_FILE", "").strip() or None,
+            profile_enabled=_bool(os.getenv("PROFILE_ENABLED"), default=True),
+            profile_extraction_model=os.getenv(
+                "PROFILE_EXTRACTION_MODEL", "llama-3.1-8b-instant"
+            ).strip(),
+            camera_index=int(os.getenv("CAMERA_INDEX", "0")),
         )
 
     @property

@@ -45,6 +45,14 @@ cd electron
 npm install
 ```
 
+## Camera (Phase 4)
+
+`see_camera` opens the webcam for a single frame, then releases it — no
+continuous monitoring. The first call triggers macOS's Camera permission
+prompt for whichever app/binary is running the backend (same per-app
+caveat as Accessibility/Input Monitoring below); grant it under System
+Settings > Privacy & Security > Camera.
+
 ## macOS permissions (required)
 
 Electron spawns the Python backend as its own OS process, and the hotkey
@@ -153,6 +161,85 @@ Logs go to `jarvis.log` / `jarvis.err.log` in the project root.
 | `TTS_VOICE`            | `de-DE-KillianNeural`       | edge-tts fallback voice            |
 | `ELEVENLABS_API_KEY`   | —                           | optional, better quality           |
 | `ELEVENLABS_VOICE_ID`  | —                           | required if using ElevenLabs       |
+| `TOOLS_ENABLED`        | `true`                      | gives the LLM real system access (see below) |
+| `TAVILY_API_KEY`       | —                           | enables `web_search`; get a free key at tavily.com |
+| `VISION_MODEL`         | `meta-llama/llama-4-scout-17b-16e-instruct` | used only by `see_screen` |
+| `PROACTIVITY_ENABLED`  | `true`                      | morning brief / GitHub watcher / idle nudge |
+| `MORNING_BRIEF_TIME`   | `07:30`                     |                                      |
+| `GITHUB_REPOS`         | —                           | comma-separated `owner/repo` list  |
+| `IDLE_NUDGE_MINUTES`   | `120`                       |                                      |
+| `WEATHER_LATITUDE` / `_LONGITUDE` | — | for the morning brief's weather section |
+| `PROFILE_ENABLED`      | `true`                      | structured profile (see below), needs `MEMORY_ENABLED=true` |
+| `PROFILE_EXTRACTION_MODEL` | `llama-3.1-8b-instant` | cheap model for per-turn extraction |
+| `CAMERA_INDEX`         | `0`                         | which webcam `see_camera` opens     |
+
+## Tools (Phase 1)
+
+With `TOOLS_ENABLED=true` (default), the model decides on its own — via
+Groq function calling — when to use real system access instead of just
+talking. Implemented in `jarvis/tools/`, one class per tool:
+
+| Tool | What it does |
+|------|---------------|
+| `read_file` / `write_file` / `list_files` | Read, create/overwrite, and search files |
+| `run_shell` | Run a shell command (zsh), 30s timeout |
+| `open_app` | Launch a macOS app by name (`open -a`) |
+| `read_clipboard` / `write_clipboard` | Get/set the clipboard (`pbpaste`/`pbcopy`) |
+| `open_url` / `search_web_browser` | Open a URL or a Google search in the default browser |
+| `list_calendar_events` / `add_calendar_event` | Query/add macOS Calendar events via AppleScript |
+| `see_screen` | Screenshot the screen and describe it via a vision-capable Groq model |
+| `see_camera` | Capture one webcam frame and describe it via the same vision model |
+| `web_search` | Web search via Tavily — only registered if `TAVILY_API_KEY` is set |
+
+Every tool call (name, arguments, result) is broadcast to the dashboard as
+a `tool_call` WebSocket event and shown in the chat log, so you can see
+what Jarvis actually did.
+
+**`run_shell` and `write_file` execute with this process's full
+permissions and have no sandboxing or confirmation step** — by design,
+for a single trusted user on their own machine. Set `TOOLS_ENABLED=false`
+if you'd rather Jarvis stay a plain chatbot.
+
+## Proactivity (Phase 2)
+
+With `PROACTIVITY_ENABLED=true` (default), `jarvis/proactive.py` runs
+three background jobs on an APScheduler scheduler — Jarvis can speak up
+without being asked:
+
+| Job | Behavior |
+|-----|----------|
+| Morning brief | Once a day (`MORNING_BRIEF_TIME`), summarizes today's calendar, open GitHub PRs, the weather, and (optionally) a tasks checklist file — spoken aloud and shown in the dashboard. |
+| GitHub watcher | Polls `GITHUB_REPOS` every `GITHUB_WATCH_INTERVAL_MINUTES` via the `gh` CLI; only announces PRs that are new or changed since the last poll. |
+| Idle nudge | After `IDLE_NUDGE_MINUTES` with no hotkey/typed interaction, suggests a break. Re-arms as soon as you interact again. |
+
+The GitHub watcher needs `gh auth login` already done — it shells out to
+the CLI rather than managing its own token. Weather uses Open-Meteo
+(`WEATHER_LATITUDE`/`WEATHER_LONGITUDE`), no API key required.
+
+## Structured memory (Phase 3)
+
+With `PROFILE_ENABLED=true` (default, needs `MEMORY_ENABLED=true` too),
+Jarvis keeps a small structured JSON profile instead of just replaying
+raw chat history:
+
+```json
+{
+  "projects": {"cosinuss": {"status": "in_progress", "priority": 1}},
+  "goals": ["IU Madinah"],
+  "daily_patterns": {"produktivster Zeitraum": "9-13 Uhr"},
+  "preferences": {"response_style": "direkt"}
+}
+```
+
+After every turn, a cheap/fast model (`PROFILE_EXTRACTION_MODEL`, default
+`llama-3.1-8b-instant`) reads the exchange in the background and returns
+a JSON *patch* — only what's new or changed. The patch is merged
+additively into the profile (`jarvis/profile.py`) stored in the same
+SQLite file as the chat log (`memory.py`'s `profile` table) — nothing
+gets deleted just because a later turn didn't mention it. The current
+profile is injected into every system prompt (`llm.py`'s `Brain.ask`), so
+Jarvis has persistent context about you without re-reading the whole
+conversation history. Inspect it directly via `GET /api/profile`.
 
 ## Layout
 
@@ -160,10 +247,13 @@ Logs go to `jarvis.log` / `jarvis.err.log` in the project root.
 jarvis/
   config.py    load .env into one typed Config
   llm.py       Groq client + working-memory window, seeded from MemoryStore
-  memory.py    persistent conversation log (SQLite)
+  memory.py    persistent conversation log + structured profile (SQLite)
+  profile.py   per-turn structured-profile extraction (Phase 3)
   hotkey.py    global Option-key listener (press/release for hold-to-talk)
   voice.py     mic capture (sounddevice) + local STT (faster-whisper)
   tts.py       speech output: ElevenLabs, falling back to edge-tts
+  tools/       real system access via Groq function calling (see Tools above)
+  proactive.py background jobs: morning brief, GitHub watcher, idle nudge
   server.py    FastAPI + WebSocket bridge — the dashboard's only way in
 electron/
   main.js      Electron main process; spawns the Python backend
@@ -172,6 +262,3 @@ start.sh       launches Electron (which spawns the backend) — used by launchd
 com.jarvis.app.plist   launchd LaunchAgent (not installed automatically)
 ```
 
-## Roadmap (next phases)
-
-- Tools: clipboard, web search, app launcher, screen capture, browser control

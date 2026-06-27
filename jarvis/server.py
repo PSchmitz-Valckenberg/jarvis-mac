@@ -22,6 +22,9 @@ from .config import config
 from .hotkey import HotkeyListener
 from .llm import Brain, LLMError
 from .memory import MemoryStore
+from .proactive import ProactivityEngine
+from .profile import ProfileExtractor
+from .tools import build_default_registry
 from .tts import PRESET_VOICES, Speaker, TTSError
 from .voice import Recorder, Transcriber, VoiceError
 
@@ -72,10 +75,20 @@ class JarvisBackend:
         self.memory = self._build_memory()
         self.speaker = Speaker() if config.tts_enabled else None
 
+        self.tools = build_default_registry() if config.tools_enabled else None
+
+        # Structured profile extraction needs somewhere to persist the
+        # profile — without MemoryStore there's nothing to build on.
+        self.profile_extractor = (
+            ProfileExtractor(self.memory)
+            if config.profile_enabled and self.memory is not None
+            else None
+        )
+
         self.brain: Brain | None = None
         self.brain_error: str | None = None
         try:
-            self.brain = Brain(memory=self.memory)
+            self.brain = Brain(memory=self.memory, tools=self.tools, profile_extractor=self.profile_extractor)
         except LLMError as exc:
             self.brain_error = str(exc)
 
@@ -97,6 +110,12 @@ class JarvisBackend:
             on_release=self._on_release,
         )
 
+        self.proactivity = (
+            ProactivityEngine(speak=self._speak_proactive, broadcast=hub.broadcast)
+            if config.proactivity_enabled
+            else None
+        )
+
     def _build_memory(self) -> MemoryStore | None:
         if not config.memory_enabled:
             return None
@@ -105,6 +124,16 @@ class JarvisBackend:
         except Exception as exc:  # noqa: BLE001 — degrade gracefully, don't crash startup
             print(f"⚠️  Persistent memory unavailable: {exc}")
             return None
+
+    def _speak_proactive(self, text: str) -> None:
+        """TTS for proactive announcements — a no-op if TTS isn't configured;
+        the dashboard still gets the text via the broadcast in ProactivityEngine."""
+        if self.speaker is None:
+            return
+        try:
+            self.speaker.speak(text)
+        except TTSError as exc:
+            print(f"⚠️  Proactive TTS failed: {exc}")
 
     def _build_recorder(self):
         try:
@@ -130,10 +159,16 @@ class JarvisBackend:
             "memory_turns": len(self.memory.recent(10_000)) if self.memory else 0,
             "tts_enabled": self.speaker is not None,
             "voice_available": self.recorder is not None,
+            "tools_enabled": self.tools is not None,
+            "tools": self.tools.names() if self.tools else [],
+            "proactivity_enabled": self.proactivity is not None,
+            "profile_enabled": self.profile_extractor is not None,
         }
 
     # ── Hotkey handlers (pynput thread) ─────────────────────────────
     def _on_press(self) -> None:
+        if self.proactivity is not None:
+            self.proactivity.note_activity()
         # Barge-in: holding the hotkey while Jarvis is still talking cuts
         # the speech off immediately instead of waiting for it to finish.
         self._bump_generation()
@@ -185,15 +220,20 @@ class JarvisBackend:
 
     def ask_text(self, prompt: str) -> None:
         """Entry point for typed input coming from the dashboard via HTTP."""
+        if self.proactivity is not None:
+            self.proactivity.note_activity()
         threading.Thread(target=self._ask_and_reply, args=(prompt,), daemon=True).start()
 
     def _ask_and_reply(self, prompt: str) -> None:
         generation = self._bump_generation()
         hub.broadcast({"type": "state", "state": "thinking"})
+        def _on_tool_call(name: str, arguments: dict[str, Any], result: str) -> None:
+            hub.broadcast({"type": "tool_call", "name": name, "arguments": arguments, "result": result})
+
         try:
             if self.brain is None:
                 raise LLMError(self.brain_error or "LLM not configured")
-            reply = self.brain.ask(prompt)
+            reply = self.brain.ask(prompt, on_tool_call=_on_tool_call)
         except LLMError as exc:
             hub.broadcast({"type": "error", "message": str(exc)})
             if self._is_current(generation):
@@ -230,9 +270,13 @@ class JarvisBackend:
 
     def start(self) -> None:
         self.listener.start()
+        if self.proactivity is not None:
+            self.proactivity.start()
 
     def shutdown(self) -> None:
         self.listener.stop()
+        if self.proactivity is not None:
+            self.proactivity.shutdown()
         if self.recorder is not None:
             self.recorder.close()
         if self.memory is not None:
@@ -280,6 +324,13 @@ app.add_middleware(
 @app.get("/api/status")
 async def get_status() -> dict[str, Any]:
     return backend.status()
+
+
+@app.get("/api/profile")
+async def get_profile() -> dict[str, Any]:
+    if backend.memory is None:
+        return {"enabled": False, "profile": None}
+    return {"enabled": True, "profile": backend.memory.get_profile()}
 
 
 @app.get("/api/voices")

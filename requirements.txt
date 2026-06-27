@@ -16,5 +16,16 @@ elevenlabs>=2.0.0         # higher-quality TTS (optional, free tier ~10k chars/m
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 
+# Tools (Phase 1) — real system integration: web search, files, shell,
+# apps, clipboard, browser, calendar (AppleScript), screenshot+vision
+tavily-python>=0.5.0      # web search; only used if TAVILY_API_KEY is set
+
+# Proactivity layer (Phase 2) — morning brief, GitHub watcher, idle nudge
+apscheduler>=3.10.0
+requests>=2.31.0          # Open-Meteo (weather), no API key needed
+
+# Camera input (Phase 4) — one frame from the webcam for the see_camera tool
+opencv-python-headless>=4.9.0
+
 # --- Phase 6+ (commented until needed) ---
 # pyobjc                  # deeper macOS integration (clipboard, app launch)

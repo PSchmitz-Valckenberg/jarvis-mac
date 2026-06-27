@@ -285,6 +285,11 @@ body,
   color: var(--red);
 }
 
+.role-tool .chat-role,
+.role-tool .chat-text {
+  color: var(--cyan-dim);
+}
+
 .chat-text {
   flex: 1;
   white-space: pre-wrap;

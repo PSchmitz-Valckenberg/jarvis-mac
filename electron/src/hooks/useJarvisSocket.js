@@ -61,6 +61,21 @@ export function useJarvisSocket() {
         } else if (data.type === "error") {
           setLog((prev) => [...prev, { role: "system", text: data.message }]);
           setTicker(`ERROR: ${data.message}`);
+        } else if (data.type === "tool_call") {
+          const resultPreview =
+            data.result.length > 200 ? `${data.result.slice(0, 200)}…` : data.result;
+          setLog((prev) => [
+            ...prev,
+            { role: "tool", text: `⚙ ${data.name}(${JSON.stringify(data.arguments)}) → ${resultPreview}` },
+          ]);
+        } else if (
+          data.type === "morning_brief" ||
+          data.type === "idle_nudge" ||
+          data.type === "github_update"
+        ) {
+          // Jarvis speaking up on its own, not in response to a question —
+          // shown as an assistant message so it reads naturally in the log.
+          setLog((prev) => [...prev, { role: "assistant", text: data.text }]);
         }
       };
     }

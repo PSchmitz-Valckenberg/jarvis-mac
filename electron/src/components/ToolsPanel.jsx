@@ -1,15 +1,26 @@
 import { Panel, Row } from "./Panel.jsx";
 
-// Placeholders for the next phase's tools (clipboard, web search, app
-// launcher, screen capture, browser control) — wired up once they exist.
-const TOOLS = ["Clipboard", "Web Search", "App Launcher", "Screen Capture", "Browser Control"];
+function label(toolName) {
+  return toolName.replace(/_/g, " ").toUpperCase();
+}
 
-export default function ToolsPanel() {
+export default function ToolsPanel({ status }) {
+  if (!status?.tools_enabled) {
+    return (
+      <Panel title="ACTIVE TOOLS">
+        <Row label="STATUS" value="DISABLED" />
+      </Panel>
+    );
+  }
+
+  const tools = status.tools ?? [];
   return (
     <Panel title="ACTIVE TOOLS">
-      {TOOLS.map((name) => (
-        <Row key={name} label={name.toUpperCase()} value="—" />
-      ))}
+      {tools.length === 0 ? (
+        <Row label="STATUS" value="NONE" />
+      ) : (
+        tools.map((name) => <Row key={name} label={label(name)} value="ON" />)
+      )}
     </Panel>
   );
 }
