@@ -9,6 +9,8 @@ faster-whisper>=1.0.3     # local STT (CTranslate2, CPU-friendly)
 sounddevice>=0.5.0        # microphone capture
 numpy>=1.26.0             # audio buffer handling
 
-# --- Phase 3+ (commented until needed) ---
-# edge-tts                # optional TTS
+# Text-to-speech (Phase 4)
+edge-tts>=6.1.0           # free online TTS; playback via macOS's built-in afplay
+
+# --- Phase 5+ (commented until needed) ---
 # pyobjc                  # deeper macOS integration (clipboard, app launch)

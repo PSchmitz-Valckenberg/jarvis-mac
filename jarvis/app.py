@@ -24,6 +24,7 @@ from .hotkey import HotkeyListener
 from .llm import Brain, LLMError
 from .memory import MemoryStore
 from .overlay import Overlay
+from .tts import Speaker, TTSError
 from .voice import Recorder, Transcriber, VoiceError
 
 
@@ -64,16 +65,35 @@ class JarvisApp:
     def _build_ask(self):
         """Return an ask(prompt)->str callable, or one that reports setup errors."""
         self.memory = self._build_memory()
+        self.speaker = Speaker() if config.tts_enabled else None
+
         try:
             brain = Brain(memory=self.memory)
-            return brain.ask
+            ask = brain.ask
         except LLMError as exc:
             message = str(exc)
 
-            def _broken(_prompt: str) -> str:
+            def ask(_prompt: str) -> str:
                 raise LLMError(message)
 
-            return _broken
+        if self.speaker is None:
+            return ask
+
+        def ask_and_speak(prompt: str) -> str:
+            reply = ask(prompt)
+            if reply:
+                threading.Thread(target=self._speak, args=(reply,), daemon=True).start()
+            return reply
+
+        return ask_and_speak
+
+    def _speak(self, text: str) -> None:
+        # Best-effort: a TTS hiccup (network down, edge-tts service issue)
+        # shouldn't disrupt the text reply the user already has.
+        try:
+            self.speaker.speak(text)
+        except TTSError as exc:
+            print(f"⚠️  TTS failed: {exc}")
 
     def _build_memory(self) -> MemoryStore | None:
         """Return a MemoryStore, or None if memory is disabled/unavailable.

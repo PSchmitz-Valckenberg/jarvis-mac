@@ -1,8 +1,9 @@
-# Jarvis (macOS) — Phase 3
+# Jarvis (macOS) — Phase 4
 
 A minimal, Mac-style AI overlay. Hold the hotkey and talk, or tap it and
-type — a dark glass panel pops up, Groq answers, and it remembers your
-conversation across restarts. Tools come in a later phase.
+type — a dark glass panel pops up, Groq answers (out loud too, if you
+want), and it remembers your conversation across restarts. Tools come in
+a later phase.
 
 ```
 hold hotkey (Option)  →  overlay "Listening…"  →  release
@@ -74,7 +75,8 @@ python run.py
 | `MIN_RECORD_SECONDS`   | `0.35`                      | holds shorter than this are ignored |
 | `MEMORY_ENABLED`       | `true`                      | persist conversations across restarts |
 | `MEMORY_DB_PATH`       | `jarvis_memory.db`          | SQLite file, relative to project root |
-| `TTS_ENABLED`          | `false`                     | Phase 4                             |
+| `TTS_ENABLED`          | `false`                     | speak every reply out loud           |
+| `TTS_VOICE`            | `en-US-AriaNeural`          | see `edge-tts --list-voices`         |
 
 ## Layout
 
@@ -85,12 +87,12 @@ jarvis/
   memory.py    persistent conversation log (SQLite)
   hotkey.py    global Option-key listener (press/release for hold-to-talk)
   voice.py     mic capture (sounddevice) + local STT (faster-whisper)
+  tts.py       optional speech output (edge-tts + afplay)
   overlay.py   frameless translucent Qt panel (text + listening states)
-  app.py       wires hotkey → voice/text → LLM
+  app.py       wires hotkey → voice/text → LLM (→ TTS)
 run.py         entry point
 ```
 
 ## Roadmap (next phases)
 
-- Optional TTS (edge-tts)
 - Tools: clipboard, web search, app launcher, screen capture, browser control
