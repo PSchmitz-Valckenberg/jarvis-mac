@@ -6,6 +6,7 @@ import Waveform from "./components/Waveform.jsx";
 import MemoryPanel from "./components/MemoryPanel.jsx";
 import ToolsPanel from "./components/ToolsPanel.jsx";
 import SystemPanel from "./components/SystemPanel.jsx";
+import VoicePanel from "./components/VoicePanel.jsx";
 import Ticker from "./components/Ticker.jsx";
 import { useJarvisSocket } from "./hooks/useJarvisSocket.js";
 
@@ -23,14 +24,15 @@ export default function App() {
 
   return (
     <div className="app">
+      <div className="scanlines" />
       <TopBar connected={connected} status={status} />
 
       <div className="main-grid">
-        <div className="panel-left">
+        <div className="panel-left hud-frame">
           <Orb state={state} />
         </div>
 
-        <div className="panel-center">
+        <div className="panel-center hud-frame">
           <ChatLog log={log} />
           <Waveform active={state === "listening" || state === "speaking"} />
           <form className="input-row" onSubmit={handleSubmit}>
@@ -45,12 +47,13 @@ export default function App() {
 
         <div className="panel-right">
           <SystemPanel status={status} connected={connected} />
+          <VoicePanel />
           <MemoryPanel status={status} />
           <ToolsPanel />
         </div>
       </div>
 
-      <Ticker message={ticker} />
+      <Ticker message={ticker} status={status} />
     </div>
   );
 }

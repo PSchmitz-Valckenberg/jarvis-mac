@@ -4,14 +4,16 @@
 }
 
 :root {
-  --bg: #080c10;
-  --panel-bg: #0d141a;
+  --bg: #05070a;
+  --panel-bg: #0a1014;
   --panel-border: #1c3a44;
   --cyan: #39e6ff;
   --cyan-dim: #1c5a66;
+  --red: #ff2e4d;
+  --red-dim: #6a1422;
+  --amber: #ffaa33;
   --text: #cfe8ee;
   --text-dim: #5e8a93;
-  --danger: #ff4d6d;
 }
 
 * {
@@ -31,12 +33,74 @@ body,
 }
 
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100vw;
   padding: 16px;
   gap: 12px;
+}
+
+/* ── Scanline / CRT overlay ──────────────────────────────────────── */
+.scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(255, 255, 255, 0.025) 1px,
+    rgba(255, 255, 255, 0) 2px
+  );
+  mix-blend-mode: overlay;
+}
+
+.scanlines::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 140px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(57, 230, 255, 0.06),
+    transparent
+  );
+  animation: scan-move 7s linear infinite;
+}
+
+@keyframes scan-move {
+  0% {
+    transform: translateY(-140px);
+  }
+  100% {
+    transform: translateY(100vh);
+  }
+}
+
+/* ── HUD corner brackets (no extra DOM — pure background layers) ──── */
+.hud-frame {
+  position: relative;
+  background-image:
+    linear-gradient(var(--cyan) 2px, transparent 2px),
+    linear-gradient(90deg, var(--cyan) 2px, transparent 2px),
+    linear-gradient(var(--cyan) 2px, transparent 2px),
+    linear-gradient(90deg, var(--cyan) 2px, transparent 2px),
+    linear-gradient(var(--cyan) 2px, transparent 2px),
+    linear-gradient(90deg, var(--cyan) 2px, transparent 2px),
+    linear-gradient(var(--cyan) 2px, transparent 2px),
+    linear-gradient(90deg, var(--cyan) 2px, transparent 2px);
+  background-repeat: no-repeat;
+  background-size: 2px 16px, 16px 2px, 2px 16px, 16px 2px, 2px 16px, 16px 2px, 2px 16px, 16px 2px;
+  background-position:
+    top left, top left,
+    top right, top right,
+    bottom left, bottom left,
+    bottom right, bottom right;
+  opacity: 0.85;
 }
 
 /* ── Top bar ─────────────────────────────────────────────── */
@@ -47,8 +111,18 @@ body,
   padding: 10px 18px;
   border: 1px solid var(--panel-border);
   border-radius: 4px;
-  background: linear-gradient(180deg, rgba(57, 230, 255, 0.06), transparent);
   letter-spacing: 2px;
+}
+
+/* A ::before instead of background-image — .hud-frame already owns that
+   property for the corner brackets, and only one background-image wins. */
+.top-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(57, 230, 255, 0.06), transparent);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .brand {
@@ -56,6 +130,12 @@ body,
   font-weight: bold;
   color: var(--cyan);
   text-shadow: 0 0 12px rgba(57, 230, 255, 0.6);
+}
+
+.coords {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
 }
 
 .status-indicators {
@@ -75,13 +155,40 @@ body,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--danger);
-  box-shadow: 0 0 6px var(--danger);
+  background: var(--red);
+  box-shadow: 0 0 6px var(--red);
 }
 
 .dot.ok {
   background: var(--cyan);
   box-shadow: 0 0 6px var(--cyan);
+}
+
+.clock {
+  color: var(--cyan);
+  font-weight: bold;
+}
+
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--red);
+  font-weight: bold;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 6px var(--red);
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
 }
 
 /* ── Main grid ───────────────────────────────────────────── */
@@ -106,7 +213,7 @@ body,
   justify-content: center;
   border: 1px solid var(--panel-border);
   border-radius: 4px;
-  background: var(--panel-bg);
+  background-color: var(--panel-bg);
 }
 
 .panel-center {
@@ -116,11 +223,11 @@ body,
   min-height: 0;
   border: 1px solid var(--panel-border);
   border-radius: 4px;
-  background: var(--panel-bg);
+  background-color: var(--panel-bg);
   padding: 16px;
 }
 
-/* ── Orb ─────────────────────────────────────────────────── */
+/* ── Orb (canvas particle sphere) ───────────────────────────── */
 .orb-column {
   display: flex;
   flex-direction: column;
@@ -128,79 +235,8 @@ body,
   gap: 18px;
 }
 
-.orb-wrap {
-  position: relative;
-  width: 160px;
-  height: 160px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.orb-core {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #aef6ff, var(--cyan) 55%, var(--cyan-dim) 100%);
-  box-shadow: 0 0 30px 6px rgba(57, 230, 255, 0.55);
-  animation: pulse 2.4s ease-in-out infinite;
-}
-
-.orb-ring {
-  position: absolute;
-  border: 1px solid var(--cyan-dim);
-  border-radius: 50%;
-  opacity: 0.6;
-}
-
-.ring1 {
-  width: 100px;
-  height: 100px;
-  animation: spin 6s linear infinite;
-}
-
-.ring2 {
-  width: 130px;
-  height: 130px;
-  border-style: dashed;
-  animation: spin 14s linear infinite reverse;
-}
-
-.ring3 {
-  width: 160px;
-  height: 160px;
-  animation: spin 22s linear infinite;
-}
-
-.state-listening .orb-core,
-.state-speaking .orb-core {
-  animation: pulse-fast 0.9s ease-in-out infinite;
-  box-shadow: 0 0 45px 10px rgba(57, 230, 255, 0.85);
-}
-
-.state-thinking .orb-core {
-  background: radial-gradient(circle at 35% 35%, #fff3b0, #ffcc33 55%, #8a6a10 100%);
-  box-shadow: 0 0 35px 8px rgba(255, 204, 51, 0.6);
-}
-
-.state-transcribing .orb-core {
-  background: radial-gradient(circle at 35% 35%, #ffd0e6, #ff4d8d 55%, #7a1a44 100%);
-  box-shadow: 0 0 35px 8px rgba(255, 77, 141, 0.6);
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.08); }
-}
-
-@keyframes pulse-fast {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.22); }
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.orb-canvas {
+  display: block;
 }
 
 .state-label {
@@ -246,7 +282,7 @@ body,
 
 .role-system .chat-role,
 .role-system .chat-text {
-  color: var(--danger);
+  color: var(--red);
 }
 
 .chat-text {
@@ -302,7 +338,7 @@ body,
 .panel {
   border: 1px solid var(--panel-border);
   border-radius: 4px;
-  background: var(--panel-bg);
+  background-color: var(--panel-bg);
   padding: 12px 14px;
 }
 
@@ -323,28 +359,99 @@ body,
   color: var(--text-dim);
 }
 
-.panel-row-value {
+.voice-select {
+  width: 100%;
+  background: #060a0d;
+  border: 1px solid var(--panel-border);
   color: var(--text);
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 3px;
 }
 
-/* ── Ticker ──────────────────────────────────────────────── */
+.voice-select:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+
+.voice-disabled {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.panel-row-value {
+  color: var(--text);
+  display: inline-block;
+}
+
+/* Briefly flashes when a value changes — see useGlitchOnChange. */
+.panel-row-value.glitch {
+  animation: glitch 0.35s steps(2, jump-none);
+}
+
+@keyframes glitch {
+  0% {
+    color: var(--amber);
+    text-shadow: 1px 0 var(--red), -1px 0 var(--cyan);
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-1px);
+    text-shadow: -1px 0 var(--red), 1px 0 var(--cyan);
+  }
+  50% {
+    transform: translateX(1px);
+    text-shadow: 1px 0 var(--cyan), -1px 0 var(--red);
+  }
+  75% {
+    transform: translateX(-1px);
+  }
+  100% {
+    color: var(--text);
+    text-shadow: none;
+    transform: translateX(0);
+  }
+}
+
+/* ── Ticker (scrolling marquee) ─────────────────────────────── */
 .ticker {
   border: 1px solid var(--panel-border);
   border-radius: 4px;
-  background: var(--panel-bg);
+  background-color: var(--panel-bg);
   padding: 8px 16px;
   display: flex;
   gap: 14px;
   align-items: center;
   font-size: 12px;
+  overflow: hidden;
 }
 
 .ticker-tag {
-  color: var(--cyan);
+  flex: 0 0 auto;
+  color: var(--red);
   letter-spacing: 2px;
+  font-weight: bold;
+}
+
+.ticker-track {
+  flex: 1;
+  display: flex;
+  gap: 60px;
+  white-space: nowrap;
+  animation: marquee 22s linear infinite;
 }
 
 .ticker-text {
   color: var(--text-dim);
   letter-spacing: 1px;
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
 }

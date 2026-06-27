@@ -31,6 +31,8 @@ class Config:
     tts_voice: str
     elevenlabs_api_key: str
     elevenlabs_voice_id: str
+    elevenlabs_stability: float
+    elevenlabs_similarity_boost: float
     whisper_model: str
     whisper_language: str | None
     min_record_seconds: float
@@ -57,6 +59,13 @@ class Config:
             tts_voice=os.getenv("TTS_VOICE", "de-DE-KillianNeural").strip(),
             elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", "").strip(),
             elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", "").strip(),
+            # Higher stability = more monotone/consistent; higher similarity
+            # = closer to the original voice sample. 0.75/0.85 leans toward
+            # a steady, deep delivery rather than an expressive one.
+            elevenlabs_stability=float(os.getenv("ELEVENLABS_STABILITY", "0.75")),
+            elevenlabs_similarity_boost=float(
+                os.getenv("ELEVENLABS_SIMILARITY_BOOST", "0.85")
+            ),
             whisper_model=os.getenv("WHISPER_MODEL", "base").strip(),
             whisper_language=os.getenv("WHISPER_LANGUAGE", "").strip() or None,
             min_record_seconds=float(os.getenv("MIN_RECORD_SECONDS", "0.35")),

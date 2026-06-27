@@ -22,7 +22,7 @@ from .config import config
 from .hotkey import HotkeyListener
 from .llm import Brain, LLMError
 from .memory import MemoryStore
-from .tts import Speaker, TTSError
+from .tts import PRESET_VOICES, Speaker, TTSError
 from .voice import Recorder, Transcriber, VoiceError
 
 GREETING = "Ich habe Sie gehört, Meister. Alle Systeme sind jetzt online."
@@ -84,6 +84,13 @@ class JarvisBackend:
         self._transcribe_lock = threading.Lock()
         self._recording_started_at: float | None = None
 
+        # Bumped on every new turn (press, or a fresh ask). Lets an
+        # in-flight ask/speak notice it's been superseded — e.g. the user
+        # barges in while Jarvis is still talking — and skip its trailing
+        # state broadcasts instead of clobbering the new "listening" state.
+        self._generation_lock = threading.Lock()
+        self._generation = 0
+
         self.listener = HotkeyListener(
             hotkey=config.hotkey,
             on_press=self._on_press,
@@ -105,6 +112,15 @@ class JarvisBackend:
         except VoiceError as exc:
             return None, str(exc)
 
+    def _bump_generation(self) -> int:
+        with self._generation_lock:
+            self._generation += 1
+            return self._generation
+
+    def _is_current(self, generation: int) -> bool:
+        with self._generation_lock:
+            return self._generation == generation
+
     def status(self) -> dict[str, Any]:
         return {
             "has_api_key": config.has_api_key,
@@ -118,6 +134,12 @@ class JarvisBackend:
 
     # ── Hotkey handlers (pynput thread) ─────────────────────────────
     def _on_press(self) -> None:
+        # Barge-in: holding the hotkey while Jarvis is still talking cuts
+        # the speech off immediately instead of waiting for it to finish.
+        self._bump_generation()
+        if self.speaker is not None:
+            self.speaker.interrupt()
+
         if self.recorder is None:
             hub.broadcast({"type": "error", "message": self.recorder_error})
             return
@@ -166,6 +188,7 @@ class JarvisBackend:
         threading.Thread(target=self._ask_and_reply, args=(prompt,), daemon=True).start()
 
     def _ask_and_reply(self, prompt: str) -> None:
+        generation = self._bump_generation()
         hub.broadcast({"type": "state", "state": "thinking"})
         try:
             if self.brain is None:
@@ -173,23 +196,29 @@ class JarvisBackend:
             reply = self.brain.ask(prompt)
         except LLMError as exc:
             hub.broadcast({"type": "error", "message": str(exc)})
-            hub.broadcast({"type": "state", "state": "idle"})
+            if self._is_current(generation):
+                hub.broadcast({"type": "state", "state": "idle"})
             return
         except Exception as exc:  # noqa: BLE001 — never leave the dashboard stuck "thinking"
             hub.broadcast({"type": "error", "message": f"Unexpected error: {exc}"})
-            hub.broadcast({"type": "state", "state": "idle"})
+            if self._is_current(generation):
+                hub.broadcast({"type": "state", "state": "idle"})
             return
 
         hub.broadcast({"type": "reply", "text": reply})
 
-        if self.speaker is not None and reply:
+        # If a newer turn has started since (e.g. the user already barged
+        # in again), don't start talking over it or stomp its state with
+        # our own trailing "idle".
+        if self.speaker is not None and reply and self._is_current(generation):
             hub.broadcast({"type": "state", "state": "speaking"})
             try:
                 self.speaker.speak(reply)
             except TTSError as exc:
                 print(f"⚠️  TTS failed: {exc}")
 
-        hub.broadcast({"type": "state", "state": "idle"})
+        if self._is_current(generation):
+            hub.broadcast({"type": "state", "state": "idle"})
 
     def speak_greeting(self) -> None:
         if self.speaker is None:
@@ -251,6 +280,25 @@ app.add_middleware(
 @app.get("/api/status")
 async def get_status() -> dict[str, Any]:
     return backend.status()
+
+
+@app.get("/api/voices")
+async def get_voices() -> dict[str, Any]:
+    if backend.speaker is None:
+        return {"enabled": False, "active": None, "presets": []}
+    return {
+        "enabled": backend.speaker.is_elevenlabs_active(),
+        "active": backend.speaker.current_voice_id(),
+        "presets": PRESET_VOICES,
+    }
+
+
+@app.post("/api/voice")
+async def post_voice(payload: dict[str, Any]) -> dict[str, Any]:
+    voice_id = (payload.get("voice_id") or "").strip()
+    if backend.speaker is None or not voice_id:
+        return {"ok": False}
+    return {"ok": backend.speaker.set_voice(voice_id)}
 
 
 @app.post("/api/ask")
