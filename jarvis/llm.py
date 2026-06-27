@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import threading
+
 from groq import Groq
 
 from .config import config
 from .memory import MemoryStore
 
 SYSTEM_PROMPT = (
-    "You are Jarvis, a concise, fast macOS assistant. "
-    "Answer directly and briefly unless asked to elaborate. "
-    "You run as a small overlay on the user's screen, so keep responses "
-    "tight and skimmable. Use plain text, no markdown headers."
+    "You are Jarvis, a calm, precise AI assistant running in a command-center "
+    "dashboard. Replies may be read aloud via text-to-speech, so keep them "
+    "concise and speakable: short sentences, plain text, no markdown, no "
+    "bullet lists unless asked. Reply in the same language the user wrote "
+    "in; in German, address the user formally as \"Sie\"."
 )
 
 
@@ -36,6 +39,12 @@ class Brain:
         self._client = Groq(api_key=config.groq_api_key)
         self._max_history = max_history
         self._memory = memory
+        # A voice turn and a typed turn can land on self._history from two
+        # different threads close enough together to corrupt the list
+        # (lost/duplicated entries) without this — guards the read and the
+        # append+trim, not the network call itself, so requests still run
+        # concurrently.
+        self._lock = threading.Lock()
         self._history: list[dict[str, str]] = (
             memory.recent(max_history) if memory is not None else []
         )
@@ -46,11 +55,12 @@ class Brain:
         if not prompt:
             return ""
 
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *self._history,
-            {"role": "user", "content": prompt},
-        ]
+        with self._lock:
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *self._history,
+                {"role": "user", "content": prompt},
+            ]
 
         try:
             completion = self._client.chat.completions.create(
@@ -67,9 +77,10 @@ class Brain:
         # Remember this exchange, trimming to the most recent messages
         # (max_history is a message-entry count, not a turn count — each
         # turn adds two entries, user + assistant).
-        self._history.append({"role": "user", "content": prompt})
-        self._history.append({"role": "assistant", "content": reply})
-        self._history = self._history[-self._max_history:]
+        with self._lock:
+            self._history.append({"role": "user", "content": prompt})
+            self._history.append({"role": "assistant", "content": reply})
+            self._history = self._history[-self._max_history:]
 
         if self._memory is not None:
             # Best-effort: a reply the user already has shouldn't turn into
@@ -83,7 +94,8 @@ class Brain:
 
     def reset(self) -> None:
         """Forget the conversation — current session and persisted history."""
-        self._history.clear()
+        with self._lock:
+            self._history.clear()
         if self._memory is not None:
             try:
                 self._memory.clear()

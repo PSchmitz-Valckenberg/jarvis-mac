@@ -29,6 +29,8 @@ class Config:
     hotkey: str
     tts_enabled: bool
     tts_voice: str
+    elevenlabs_api_key: str
+    elevenlabs_voice_id: str
     whisper_model: str
     whisper_language: str | None
     min_record_seconds: float
@@ -50,7 +52,11 @@ class Config:
             max_tokens=int(os.getenv("MAX_TOKENS", "1024")),
             hotkey=os.getenv("HOTKEY", "alt").strip().lower(),
             tts_enabled=_bool(os.getenv("TTS_ENABLED"), default=False),
-            tts_voice=os.getenv("TTS_VOICE", "en-US-AriaNeural").strip(),
+            # Deep, male, German edge-tts voice — used whenever ElevenLabs
+            # isn't configured, and as its runtime fallback.
+            tts_voice=os.getenv("TTS_VOICE", "de-DE-KillianNeural").strip(),
+            elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY", "").strip(),
+            elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", "").strip(),
             whisper_model=os.getenv("WHISPER_MODEL", "base").strip(),
             whisper_language=os.getenv("WHISPER_LANGUAGE", "").strip() or None,
             min_record_seconds=float(os.getenv("MIN_RECORD_SECONDS", "0.35")),

@@ -222,3 +222,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Electron dashboard (Phase 5)
+electron/node_modules/
+electron/dist/
+
+# Jarvis runtime logs (start.sh / launchd)
+jarvis.log
+jarvis.err.log
