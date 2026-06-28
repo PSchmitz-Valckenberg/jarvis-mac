@@ -413,6 +413,16 @@ def get_weather() -> dict[str, Any]:
     return {"weather": backend.dashboard.get_weather()}
 
 
+@app.get("/api/weather/forecast")
+def get_weather_forecast() -> dict[str, Any]:
+    return {"forecast": backend.dashboard.get_weather_forecast()}
+
+
+@app.get("/api/news/summary")
+def get_news_summary(headline: str) -> dict[str, Any]:
+    return backend.dashboard.get_headline_summary(headline)
+
+
 @app.get("/api/news")
 def get_news() -> dict[str, Any]:
     return backend.dashboard.get_news_with_points()

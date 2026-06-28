@@ -1,19 +1,22 @@
 import Orb from "./Orb.jsx";
 import Waveform from "./Waveform.jsx";
 import ChatLog from "./ChatLog.jsx";
+import PortfolioCompact from "./PortfolioCompact.jsx";
 
-export default function LeftColumn({ state, ticker, log, status }) {
+export default function LeftColumn({ state, ticker, log, status, portfolio }) {
   return (
     <div className="column">
-      <div className="panel orb-wrap">
+      <div className="panel orb-wrap" style={{ flex: "0 0 auto" }}>
         <Orb state={state} />
         <Waveform state={state} />
         <div className="voice-status">{ticker}</div>
       </div>
 
+      <PortfolioCompact portfolio={portfolio} />
+
       <ChatLog log={log} />
 
-      <div className="panel">
+      <div className="panel" style={{ flex: "0 0 auto" }}>
         <p className="panel__title">
           <span>VOICE INPUT</span>
         </p>

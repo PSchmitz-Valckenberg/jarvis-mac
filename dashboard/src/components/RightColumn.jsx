@@ -67,11 +67,22 @@ function GithubPanel({ repos }) {
   );
 }
 
-function WeatherPanel({ weather }) {
+function WeatherPanel({ weather, fetchForecast }) {
+  const [expanded, setExpanded] = useState(false);
+  const [forecast, setForecast] = useState(null);
+
+  const toggle = () => {
+    if (!expanded && !forecast) {
+      fetchForecast().then(setForecast);
+    }
+    setExpanded((e) => !e);
+  };
+
   return (
-    <div className="panel">
+    <div className="panel" onClick={toggle} style={{ cursor: "pointer" }}>
       <p className="panel__title">
         <span>WETTER — MÜNCHEN</span>
+        <span className="accent">{expanded ? "WENIGER" : "MEHR"}</span>
       </p>
       {weather ? (
         <div className="weather-row">
@@ -81,6 +92,36 @@ function WeatherPanel({ weather }) {
         </div>
       ) : (
         <div className="empty-hint">Keine Wetterdaten.</div>
+      )}
+
+      {expanded && (
+        <div onClick={(e) => e.stopPropagation()}>
+          {!forecast && <div className="empty-hint">Lade Vorhersage…</div>}
+          {forecast && (
+            <>
+              <div className="forecast-hourly">
+                {forecast.hourly.map((h, i) => (
+                  <div key={i} className="forecast-hourly__item">
+                    <div>{h.time.slice(11, 16)}</div>
+                    <div>{WEATHER_ICONS[h.weathercode] || "🌡"}</div>
+                    <div className="forecast-hourly__temp">{Math.round(h.temperature)}°</div>
+                  </div>
+                ))}
+              </div>
+              <div className="forecast-daily">
+                {forecast.daily.map((d, i) => (
+                  <div key={i} className="forecast-daily__row">
+                    <span>{d.date}</span>
+                    <span>{WEATHER_ICONS[d.weathercode] || "🌡"}</span>
+                    <span>
+                      {Math.round(d.temp_min)}° / {Math.round(d.temp_max)}°
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );
@@ -120,12 +161,19 @@ function MorningScorePanel({ score, setScore }) {
   );
 }
 
-export default function RightColumn({ calendarEvents, githubRepos, weather, morningScore, setMorningScore }) {
+export default function RightColumn({
+  calendarEvents,
+  githubRepos,
+  weather,
+  fetchWeatherForecast,
+  morningScore,
+  setMorningScore,
+}) {
   return (
     <div className="column">
       <CalendarPanel events={calendarEvents} />
       <GithubPanel repos={githubRepos} />
-      <WeatherPanel weather={weather} />
+      <WeatherPanel weather={weather} fetchForecast={fetchWeatherForecast} />
       <MorningScorePanel score={morningScore} setScore={setMorningScore} />
     </div>
   );
