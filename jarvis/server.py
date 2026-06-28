@@ -125,9 +125,9 @@ class JarvisBackend:
 
         self.portfolio = PortfolioService(
             db_path=config.dashboard_db_path,
-            host=config.ibkr_host,
-            port=config.ibkr_port,
-            client_id=config.ibkr_client_id,
+            flex_token=config.ibkr_flex_token,
+            flex_query_id=config.ibkr_flex_query_id,
+            poll_interval_minutes=config.ibkr_flex_poll_minutes,
             on_update=lambda data: hub.broadcast({"type": "portfolio_update", "portfolio": data}),
         )
         self.dashboard = DashboardService(db_path=config.dashboard_db_path, broadcast=hub.broadcast)

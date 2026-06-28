@@ -75,9 +75,9 @@ class Config:
     profile_extraction_model: str
     camera_index: int
     dashboard_db_path: str
-    ibkr_host: str
-    ibkr_port: int
-    ibkr_client_id: int
+    ibkr_flex_token: str
+    ibkr_flex_query_id: str
+    ibkr_flex_poll_minutes: int
 
     @classmethod
     def load(cls) -> "Config":
@@ -130,9 +130,9 @@ class Config:
             ).strip(),
             camera_index=int(os.getenv("CAMERA_INDEX", "0")),
             dashboard_db_path=dashboard_db_path,
-            ibkr_host=os.getenv("IBKR_HOST", "127.0.0.1").strip(),
-            ibkr_port=int(os.getenv("IBKR_PORT", "7497")),
-            ibkr_client_id=int(os.getenv("IBKR_CLIENT_ID", "17")),
+            ibkr_flex_token=os.getenv("IBKR_FLEX_TOKEN", "").strip(),
+            ibkr_flex_query_id=os.getenv("IBKR_FLEX_QUERY_ID", "").strip(),
+            ibkr_flex_poll_minutes=int(os.getenv("IBKR_FLEX_POLL_MINUTES", "120")),
         )
 
     @property

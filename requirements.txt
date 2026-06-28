@@ -27,8 +27,5 @@ requests>=2.31.0          # Open-Meteo (weather), no API key needed
 # Camera input (Phase 4) — one frame from the webcam for the see_camera tool
 opencv-python-headless>=4.9.0
 
-# Dashboard (Command Center) — IBKR portfolio polling via TWS/Gateway
-ib_insync>=0.9.86
-
 # --- Phase 6+ (commented until needed) ---
 # pyobjc                  # deeper macOS integration (clipboard, app launch)

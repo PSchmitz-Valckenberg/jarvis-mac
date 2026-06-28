@@ -51,39 +51,36 @@ npm run build
 
 ## IBKR setup (portfolio data)
 
-The portfolio panel needs Interactive Brokers' **Trader Workstation (TWS)**
-or **IB Gateway** running locally with its API enabled — `ib_insync`
-(`jarvis/portfolio.py`) connects to it over a local socket, the same way
-TWS's own mobile/API clients do. If TWS isn't running or unreachable, the
-dashboard falls back to the last cached portfolio in SQLite instead of
-showing nothing.
+The portfolio panel uses IBKR's **Flex Web Service** — no TWS or IB
+Gateway needs to be installed or running. It's plain HTTPS calls
+(`jarvis/ibkr_flex.py`) against a Flex Query you set up once in IBKR's
+Client Portal. The trade-off: Flex reports are generated on demand, not
+streamed, so this is a periodic snapshot (`IBKR_FLEX_POLL_MINUTES`, default
+2h) rather than real-time — "day change" is computed by comparing each new
+snapshot against the previous cached one, not IBKR's own intraday P&L.
 
-1. **Install** TWS or IB Gateway from
-   <https://www.interactivebrokers.com/en/trading/tws.php> (an IBKR account
-   is required; a free paper-trading account works fine for testing).
-2. **Log in** to TWS — paper trading and live trading use different ports
-   by default (see below), so log into whichever mode matches the port
-   you'll configure.
-3. **Enable the API**: in TWS, go to
-   `File → Global Configuration → API → Settings` and check
-   **"Enable ActiveX and Socket Clients"**. Add `127.0.0.1` under
-   **"Trusted IP Addresses"**. Leave **"Read-Only API"** checked unless you
-   plan to place orders through this connection — the dashboard only reads
-   positions/P&L, it never trades.
-4. **Note the socket port** shown in that same settings page and match it
-   to `IBKR_PORT` in `.env`:
-   - `7497` — TWS, paper trading (default here)
-   - `7496` — TWS, live trading
-   - `4002` — IB Gateway, paper trading
-   - `4001` — IB Gateway, live trading
-5. **Leave TWS/Gateway running** — `PortfolioService` polls it every 60s
-   in its own background thread and reconnects on its own if it drops.
-6. If you run more than one IBKR API client at a time (e.g. also IBKR's
-   own mobile app or another script), give each a distinct
-   `IBKR_CLIENT_ID` — TWS rejects a second connection reusing the same ID.
+1. Log into **IBKR Client Portal** (the web app at
+   <https://www.interactivebrokers.com> → Log In).
+2. **Performance & Reports → Flex Queries** → create a new "Activity Flex
+   Query" → in the **Open Positions** section, select at least: `Symbol`,
+   `CurrencyPrimary`, `Position`, `PositionValue`, `CostBasisPrice`,
+   `FifoPnlUnrealized`. Save it and note the **Query ID** shown in the list.
+3. **Settings → Flex Web Service** → generate a **token** (this is what
+   authenticates the HTTPS calls — treat it like a password, never share it).
+4. Put both in `.env`:
+   ```
+   IBKR_FLEX_TOKEN=<your token>
+   IBKR_FLEX_QUERY_ID=<your query id>
+   ```
+5. Restart the backend. `PortfolioService` polls on its own background
+   thread every `IBKR_FLEX_POLL_MINUTES` and caches every successful
+   result to SQLite, so a failed poll falls back to the last known
+   portfolio instead of showing nothing.
 
-Once it's running, `GET /api/portfolio` should show `"connected": true`
-with real positions instead of the cached/offline fallback.
+Once configured, `GET /api/portfolio` should show `"connected": true`
+with real positions (in EUR — converted from each position's own currency
+via a free FX lookup, `jarvis/fx.py`) instead of the cached/offline
+fallback.
 
 ## Camera (Phase 4)
 
@@ -215,9 +212,9 @@ Logs go to `jarvis.log` / `jarvis.err.log` in the project root.
 | `PROFILE_EXTRACTION_MODEL` | `llama-3.1-8b-instant` | cheap model for per-turn extraction |
 | `CAMERA_INDEX`         | `0`                         | which webcam `see_camera` opens     |
 | `DASHBOARD_DB_PATH`    | `jarvis_dashboard.db`       | SQLite file: portfolio cache/history, morning score |
-| `IBKR_HOST`            | `127.0.0.1`                 | TWS/IB Gateway host                 |
-| `IBKR_PORT`            | `7497`                      | `7497`=TWS paper, `7496`=TWS live, `4002`/`4001`=Gateway |
-| `IBKR_CLIENT_ID`       | `17`                        | ib_insync client ID, must be unique per connection |
+| `IBKR_FLEX_TOKEN`      | —                           | Flex Web Service token (Client Portal → Settings) |
+| `IBKR_FLEX_QUERY_ID`   | —                           | Flex Query ID (Client Portal → Performance & Reports → Flex Queries) |
+| `IBKR_FLEX_POLL_MINUTES` | `120`                     | how often to re-poll — IBKR generates reports on demand, not live |
 
 ## Tools (Phase 1)
 
@@ -294,7 +291,7 @@ served by the backend at `/dashboard`) shows:
 
 | Panel | Source | Refresh |
 |-------|--------|---------|
-| Portfolio gauge + positions | IBKR via `ib_insync` (`jarvis/portfolio.py`), SQLite-cached when TWS is unreachable | 60s, own background thread |
+| Portfolio gauge + positions | IBKR Flex Web Service (`jarvis/portfolio.py`), SQLite-cached between polls | `IBKR_FLEX_POLL_MINUTES`, own background thread |
 | Position sparklines | 7-day history from `portfolio_history` in `DASHBOARD_DB_PATH` | on demand |
 | Calendar | macOS Calendar via AppleScript (`jarvis/tools/calendar.py`) | 5min |
 | GitHub PRs | `gh` CLI against `GITHUB_REPOS` (`jarvis/github_status.py`) | `GITHUB_WATCH_INTERVAL_MINUTES` |
@@ -326,7 +323,8 @@ jarvis/
   tts.py            speech output: ElevenLabs, falling back to edge-tts
   tools/            real system access via Groq function calling (see Tools above)
   proactive.py      background jobs: morning brief, GitHub watcher, idle nudge
-  portfolio.py      IBKR polling (ib_insync) + SQLite cache/history for the dashboard
+  portfolio.py      IBKR Flex Web Service polling + SQLite cache/history for the dashboard
+  ibkr_flex.py / fx.py   Flex Web Service client + free FX-rate lookup, used only by portfolio.py
   dashboard.py      calendar/GitHub/weather/news polling + morning score (SQLite)
   weather.py / news.py / github_status.py   small shared fetch helpers
   server.py         FastAPI + WebSocket bridge, REST endpoints, serves /dashboard
