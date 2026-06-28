@@ -1,4 +1,5 @@
-"""WebSocket/HTTP bridge between the Python backend and the Electron dashboard.
+"""FastAPI backend: WebSocket/HTTP bridge for the React dashboard, which
+this same process serves at /dashboard.
 
 Runs the same hotkey → recorder → transcriber → Brain → Speaker pipeline
 that the old PySide6 overlay used, but broadcasts state over a WebSocket
@@ -12,21 +13,27 @@ import json
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import config
+from .dashboard import DashboardService
 from .hotkey import HotkeyListener
 from .llm import Brain, LLMError
 from .memory import MemoryStore
+from .portfolio import PortfolioService
 from .proactive import ProactivityEngine
 from .profile import ProfileExtractor
 from .tools import build_default_registry
 from .tts import PRESET_VOICES, Speaker, TTSError
 from .voice import Recorder, Transcriber, VoiceError
+
+DASHBOARD_DIST_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "dist"
 
 GREETING = "Ich habe Sie gehört, Meister. Alle Systeme sind jetzt online."
 
@@ -115,6 +122,15 @@ class JarvisBackend:
             if config.proactivity_enabled
             else None
         )
+
+        self.portfolio = PortfolioService(
+            db_path=config.dashboard_db_path,
+            host=config.ibkr_host,
+            port=config.ibkr_port,
+            client_id=config.ibkr_client_id,
+            on_update=lambda data: hub.broadcast({"type": "portfolio_update", "portfolio": data}),
+        )
+        self.dashboard = DashboardService(db_path=config.dashboard_db_path, broadcast=hub.broadcast)
 
     def _build_memory(self) -> MemoryStore | None:
         if not config.memory_enabled:
@@ -272,11 +288,15 @@ class JarvisBackend:
         self.listener.start()
         if self.proactivity is not None:
             self.proactivity.start()
+        self.portfolio.start()
+        self.dashboard.start()
 
     def shutdown(self) -> None:
         self.listener.stop()
         if self.proactivity is not None:
             self.proactivity.shutdown()
+        self.portfolio.stop()
+        self.dashboard.shutdown()
         if self.recorder is not None:
             self.recorder.close()
         if self.memory is not None:
@@ -308,11 +328,13 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# The dashboard runs from a different origin (Vite's localhost:5173 in dev,
-# file:// once built) than this server (127.0.0.1:8765) — without this,
-# the browser silently drops every /api/* response and the dashboard's
-# status panels show nothing despite the server logging 200s. Only ever
-# bound to 127.0.0.1, so a permissive origin policy here is low-risk.
+# In dev, the dashboard runs from Vite's localhost:5174, a different
+# origin than this server (127.0.0.1:8765) — without this, the browser
+# silently drops every /api/* response and the dashboard's status panels
+# show nothing despite the server logging 200s. In production the
+# dashboard is served from this same origin (/dashboard), so this is only
+# load-bearing in dev — but it's only ever bound to 127.0.0.1, so a
+# permissive origin policy here is low-risk either way.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -360,6 +382,54 @@ async def post_ask(payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True}
 
 
+@app.get("/api/portfolio")
+async def get_portfolio() -> dict[str, Any]:
+    return backend.portfolio.latest()
+
+
+@app.get("/api/portfolio/sparkline/{symbol}")
+async def get_portfolio_sparkline(symbol: str) -> dict[str, Any]:
+    return {"symbol": symbol, "values": backend.portfolio.sparkline(symbol)}
+
+
+# These four call blocking I/O (AppleScript, the `gh` CLI, HTTP requests)
+# that can take anywhere from a couple seconds to tens of seconds. Defined
+# as plain `def`, not `async def`, on purpose — Starlette runs sync route
+# handlers in a thread pool automatically, whereas blocking inside an
+# `async def` would freeze the *entire* event loop (every other request,
+# including the WebSocket) for as long as the slowest of these takes.
+@app.get("/api/calendar")
+def get_calendar() -> dict[str, Any]:
+    return {"events": backend.dashboard.get_calendar()}
+
+
+@app.get("/api/github")
+def get_github() -> dict[str, Any]:
+    return {"repos": backend.dashboard.get_github()}
+
+
+@app.get("/api/weather")
+def get_weather() -> dict[str, Any]:
+    return {"weather": backend.dashboard.get_weather()}
+
+
+@app.get("/api/news")
+def get_news() -> dict[str, Any]:
+    return backend.dashboard.get_news_with_points()
+
+
+@app.get("/api/morning-score")
+async def get_morning_score() -> dict[str, Any]:
+    return {"score": backend.dashboard.get_morning_score()}
+
+
+@app.post("/api/morning-score")
+async def post_morning_score(payload: dict[str, Any]) -> dict[str, Any]:
+    score = max(1, min(int(payload.get("score", 0)), 10))
+    backend.dashboard.set_morning_score(score)
+    return {"ok": True, "score": score}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     await ws.accept()
@@ -369,6 +439,13 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             await ws.receive_text()  # no inbound messages expected; just keep it open
     except WebSocketDisconnect:
         hub.unregister(ws)
+
+
+# Serves the built dashboard (dashboard/dist, produced by `npm run build`)
+# at /dashboard — mounted last so it never shadows a more specific /api/*
+# route. Absent in dev (before the first build), so this is conditional.
+if DASHBOARD_DIST_DIR.is_dir():
+    app.mount("/dashboard", StaticFiles(directory=str(DASHBOARD_DIST_DIR), html=True), name="dashboard")
 
 
 def main() -> None:

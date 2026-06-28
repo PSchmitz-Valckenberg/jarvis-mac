@@ -50,6 +50,42 @@ def _parse_iso(value: str, field: str) -> datetime:
         raise ToolError(f"Couldn't parse {field} '{value}' — use ISO format, e.g. 2026-06-27T14:00") from None
 
 
+def list_calendar_events_structured(days_ahead: int = 1) -> list[dict[str, str]]:
+    """Same lookup as ListCalendarEventsTool, but as structured rows for the
+    dashboard instead of a single text blob — uses a control character as
+    the field separator since titles can contain "—" or commas."""
+    days_ahead = max(1, min(int(days_ahead), 30))
+    sep = "␟"
+    script = (
+        "set rangeStart to current date\n"
+        "set hours of rangeStart to 0\n"
+        "set minutes of rangeStart to 0\n"
+        "set seconds of rangeStart to 0\n"
+        f"set rangeEnd to rangeStart + ({days_ahead} * days)\n"
+        "set output to \"\"\n"
+        "tell application \"Calendar\"\n"
+        "  repeat with cal in calendars\n"
+        "    set theseEvents to (events of cal whose start date ≥ rangeStart and start date < rangeEnd)\n"
+        "    repeat with evt in theseEvents\n"
+        f"      set output to output & (summary of evt) & \"{sep}\" & ((start date of evt) as string) & \"{sep}\" & (name of cal) & linefeed\n"
+        "    end repeat\n"
+        "  end repeat\n"
+        "end tell\n"
+        "return output\n"
+    )
+    output = _run_applescript(script)
+    events = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split(sep)
+        if len(parts) != 3:
+            continue
+        title, start, calendar = parts
+        events.append({"title": title, "start": start, "calendar": calendar})
+    return events
+
+
 class ListCalendarEventsTool(Tool):
     name = "list_calendar_events"
     description = "List calendar events starting from today, across all calendars."

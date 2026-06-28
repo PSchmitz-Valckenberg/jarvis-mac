@@ -32,6 +32,13 @@ def _csv_list(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _resolve_db_path(value: str | None, default_name: str) -> str:
+    path = Path((value or "").strip() or default_name).expanduser()
+    if not path.is_absolute():
+        path = _PROJECT_ROOT / path
+    return str(path)
+
+
 @dataclass(frozen=True)
 class Config:
     groq_api_key: str
@@ -67,14 +74,15 @@ class Config:
     profile_enabled: bool
     profile_extraction_model: str
     camera_index: int
+    dashboard_db_path: str
+    ibkr_host: str
+    ibkr_port: int
+    ibkr_client_id: int
 
     @classmethod
     def load(cls) -> "Config":
-        db_path = os.getenv("MEMORY_DB_PATH", "").strip() or "jarvis_memory.db"
-        db_path = Path(db_path).expanduser()
-        if not db_path.is_absolute():
-            db_path = _PROJECT_ROOT / db_path
-        db_path = str(db_path)
+        db_path = _resolve_db_path(os.getenv("MEMORY_DB_PATH", ""), "jarvis_memory.db")
+        dashboard_db_path = _resolve_db_path(os.getenv("DASHBOARD_DB_PATH", ""), "jarvis_dashboard.db")
 
         return cls(
             groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),
@@ -121,6 +129,10 @@ class Config:
                 "PROFILE_EXTRACTION_MODEL", "llama-3.1-8b-instant"
             ).strip(),
             camera_index=int(os.getenv("CAMERA_INDEX", "0")),
+            dashboard_db_path=dashboard_db_path,
+            ibkr_host=os.getenv("IBKR_HOST", "127.0.0.1").strip(),
+            ibkr_port=int(os.getenv("IBKR_PORT", "7497")),
+            ibkr_client_id=int(os.getenv("IBKR_CLIENT_ID", "17")),
         )
 
     @property

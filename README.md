@@ -1,22 +1,25 @@
-# Jarvis (macOS) — Phase 5
+# Jarvis (macOS) — Command Center
 
-A full-screen "command center" dashboard (Electron + React) backed by a
-Python service: hold the hotkey and talk, or type in the dashboard — Groq
-answers, speaks back in German, and remembers the conversation across
-restarts.
+A full-screen "command center" dashboard (React, served by the Python
+backend itself — open it in any browser) backed by a Python service: hold
+the hotkey and talk, or type in the dashboard — Groq answers, speaks back
+in German, remembers the conversation across restarts, and shows a live
+IBKR portfolio, calendar, GitHub PRs, weather, and news.
 
 ```
                       ┌─────────────────────────────┐
 hold hotkey (Option)  │   jarvis/server.py          │   ws+http
-   → mic → Whisper    │   (Brain · Memory · Voice   │ ───────────▶  Electron + React
-   → Groq → reply     │    · TTS, same as before)   │                dashboard (UI only)
-   → TTS              └─────────────────────────────┘
+   → mic → Whisper    │   (Brain · Memory · Voice   │ ───────────▶  browser at
+   → Groq → reply     │    · TTS · Portfolio        │               /dashboard
+   → TTS              │    · Calendar/GitHub/etc.)  │               (React, built)
+                       └─────────────────────────────┘
 ```
 
-The Python backend (`jarvis/`) owns everything it always did — the global
-hotkey, the mic, Whisper, Groq, SQLite memory, TTS. It no longer drives a
-Qt popup; instead it broadcasts state over a local WebSocket, and the
-Electron dashboard renders it.
+The Python backend (`jarvis/`) owns everything: the global hotkey, the
+mic, Whisper, Groq, SQLite memory, TTS, IBKR portfolio polling, and the
+calendar/GitHub/weather/news pulls for the dashboard. It broadcasts state
+and data over a local WebSocket, and also serves the built dashboard
+itself at `/dashboard` — no separate Electron process.
 
 ## Setup
 
@@ -38,12 +41,49 @@ cp .env.example .env        # then add your GROQ_API_KEY
 
 Get a free Groq key at <https://console.groq.com/keys>.
 
-Dashboard (Electron + React):
+Dashboard (React, built once and served by the Python backend):
 
 ```bash
-cd electron
+cd dashboard
 npm install
+npm run build
 ```
+
+## IBKR setup (portfolio data)
+
+The portfolio panel needs Interactive Brokers' **Trader Workstation (TWS)**
+or **IB Gateway** running locally with its API enabled — `ib_insync`
+(`jarvis/portfolio.py`) connects to it over a local socket, the same way
+TWS's own mobile/API clients do. If TWS isn't running or unreachable, the
+dashboard falls back to the last cached portfolio in SQLite instead of
+showing nothing.
+
+1. **Install** TWS or IB Gateway from
+   <https://www.interactivebrokers.com/en/trading/tws.php> (an IBKR account
+   is required; a free paper-trading account works fine for testing).
+2. **Log in** to TWS — paper trading and live trading use different ports
+   by default (see below), so log into whichever mode matches the port
+   you'll configure.
+3. **Enable the API**: in TWS, go to
+   `File → Global Configuration → API → Settings` and check
+   **"Enable ActiveX and Socket Clients"**. Add `127.0.0.1` under
+   **"Trusted IP Addresses"**. Leave **"Read-Only API"** checked unless you
+   plan to place orders through this connection — the dashboard only reads
+   positions/P&L, it never trades.
+4. **Note the socket port** shown in that same settings page and match it
+   to `IBKR_PORT` in `.env`:
+   - `7497` — TWS, paper trading (default here)
+   - `7496` — TWS, live trading
+   - `4002` — IB Gateway, paper trading
+   - `4001` — IB Gateway, live trading
+5. **Leave TWS/Gateway running** — `PortfolioService` polls it every 60s
+   in its own background thread and reconnects on its own if it drops.
+6. If you run more than one IBKR API client at a time (e.g. also IBKR's
+   own mobile app or another script), give each a distinct
+   `IBKR_CLIENT_ID` — TWS rejects a second connection reusing the same ID.
+
+Once it's running, `GET /api/portfolio` should show `"connected": true`
+with real positions instead of the cached/offline fallback.
 
 ## Camera (Phase 4)
 
@@ -55,10 +95,9 @@ Settings > Privacy & Security > Camera.
 
 ## macOS permissions (required)
 
-Electron spawns the Python backend as its own OS process, and the hotkey
-listener (pynput) runs *inside that Python process* — so both **Electron**
-and the actual Python binary need Accessibility + Input Monitoring, not
-just Electron. Find the real Python binary with:
+The hotkey listener (pynput) runs *inside the Python backend process* —
+that's the binary that needs Accessibility + Input Monitoring. Find it
+with:
 
 ```bash
 .venv/bin/python3 -c "import sys; print(sys.executable)"
@@ -68,10 +107,8 @@ just Electron. Find the real Python binary with:
 inside the framework, not a bare `python3` binary — add *that* `.app`.)
 
 - **Accessibility** — System Settings → Privacy & Security →
-  Accessibility → add both `Electron.app`
-  (`electron/node_modules/electron/dist/Electron.app`) and the `Python.app`
-  from above.
-- **Input Monitoring** — same two apps, under System Settings → Privacy &
+  Accessibility → add the `Python.app` from above.
+- **Input Monitoring** — same app, under System Settings → Privacy &
   Security → Input Monitoring. Without this, hold-to-talk can look like
   it's "working" but only ever fire the press, never the release.
 - **Microphone** — voice input needs it. macOS prompts the first time the
@@ -80,8 +117,8 @@ inside the framework, not a bare `python3` binary — add *that* `.app`.)
   Jarvis once.
 
 Each of these is granted **per app/binary** — switching how you launch
-Jarvis (Terminal vs. VS Code vs. Electron vs. a packaged build) means
-granting all of them again for that app. Restart after granting.
+Jarvis (Terminal vs. VS Code vs. a packaged build) means granting all of
+them again for that app. Restart after granting.
 
 **If you've granted everything and it still doesn't work** (warning
 persists, only `PRESS` ever fires, never `RELEASE`): the TCC database
@@ -102,20 +139,25 @@ real, fresh system prompt instead of a stale cached decision.
 **Development** (hot-reloading dashboard, two processes):
 
 ```bash
-cd electron
-npm run dev
+# terminal 1
+python3 -m jarvis.server
+
+# terminal 2
+cd dashboard && npm run dev
 ```
 
-This starts the Vite dev server and Electron together, pointed at the
-local dev build. The Electron main process spawns the Python backend
-(`python3 -m jarvis.server`) for you.
+The Vite dev server proxies `/api` and `/ws` to the backend (see
+`dashboard/vite.config.js`), so open <http://127.0.0.1:5174> while developing.
 
-**Production-style** (built dashboard, single command):
+**Production-style** (built dashboard, single process):
 
 ```bash
-cd electron && npm run build && cd ..
+cd dashboard && npm run build && cd ..
 ./start.sh
 ```
+
+Then open <http://127.0.0.1:8765/dashboard>. The Python backend serves the
+built dashboard itself — no second process needed.
 
 - **Hold Option** to talk. Release when done — Jarvis transcribes locally
   and sends it to Groq. The first hold downloads the Whisper model
@@ -172,6 +214,10 @@ Logs go to `jarvis.log` / `jarvis.err.log` in the project root.
 | `PROFILE_ENABLED`      | `true`                      | structured profile (see below), needs `MEMORY_ENABLED=true` |
 | `PROFILE_EXTRACTION_MODEL` | `llama-3.1-8b-instant` | cheap model for per-turn extraction |
 | `CAMERA_INDEX`         | `0`                         | which webcam `see_camera` opens     |
+| `DASHBOARD_DB_PATH`    | `jarvis_dashboard.db`       | SQLite file: portfolio cache/history, morning score |
+| `IBKR_HOST`            | `127.0.0.1`                 | TWS/IB Gateway host                 |
+| `IBKR_PORT`            | `7497`                      | `7497`=TWS paper, `7496`=TWS live, `4002`/`4001`=Gateway |
+| `IBKR_CLIENT_ID`       | `17`                        | ib_insync client ID, must be unique per connection |
 
 ## Tools (Phase 1)
 
@@ -241,24 +287,53 @@ profile is injected into every system prompt (`llm.py`'s `Brain.ask`), so
 Jarvis has persistent context about you without re-reading the whole
 conversation history. Inspect it directly via `GET /api/profile`.
 
+## Dashboard data (Command Center)
+
+The dashboard (`dashboard/`, React + Vite, built to `dashboard/dist` and
+served by the backend at `/dashboard`) shows:
+
+| Panel | Source | Refresh |
+|-------|--------|---------|
+| Portfolio gauge + positions | IBKR via `ib_insync` (`jarvis/portfolio.py`), SQLite-cached when TWS is unreachable | 60s, own background thread |
+| Position sparklines | 7-day history from `portfolio_history` in `DASHBOARD_DB_PATH` | on demand |
+| Calendar | macOS Calendar via AppleScript (`jarvis/tools/calendar.py`) | 5min |
+| GitHub PRs | `gh` CLI against `GITHUB_REPOS` (`jarvis/github_status.py`) | `GITHUB_WATCH_INTERVAL_MINUTES` |
+| Weather | Open-Meteo (`jarvis/weather.py`) | 15min |
+| News + world globe | Tagesschau RSS (`jarvis/news.py`), geotagged/prioritized by a cheap Groq call (`jarvis/news_geo.py`) | 10min |
+| Morning energy score | manual 1–10 slider, persisted per day in SQLite | — |
+
+The news panel asks Groq (`PROFILE_EXTRACTION_MODEL`, the same cheap model
+used for profile extraction) to map each headline to a country/city and a
+low/medium/high priority — no external geocoding API. That's plotted as
+colored points (red=high, orange=medium, green=low) on a rotating 3D globe
+(`react-globe.gl`) next to the plain headline list, both fed by the same
+`news_update` WebSocket event.
+
+All of the above push updates over the same `/ws` WebSocket the voice
+pipeline uses; the dashboard also does one REST fetch per panel on load
+so it isn't empty before the first push.
+
 ## Layout
 
 ```
 jarvis/
-  config.py    load .env into one typed Config
-  llm.py       Groq client + working-memory window, seeded from MemoryStore
-  memory.py    persistent conversation log + structured profile (SQLite)
-  profile.py   per-turn structured-profile extraction (Phase 3)
-  hotkey.py    global Option-key listener (press/release for hold-to-talk)
-  voice.py     mic capture (sounddevice) + local STT (faster-whisper)
-  tts.py       speech output: ElevenLabs, falling back to edge-tts
-  tools/       real system access via Groq function calling (see Tools above)
-  proactive.py background jobs: morning brief, GitHub watcher, idle nudge
-  server.py    FastAPI + WebSocket bridge — the dashboard's only way in
-electron/
-  main.js      Electron main process; spawns the Python backend
-  src/         React dashboard (orb, chat log, waveform, status panels)
-start.sh       launches Electron (which spawns the backend) — used by launchd
+  config.py        load .env into one typed Config
+  llm.py            Groq client + working-memory window, seeded from MemoryStore
+  memory.py         persistent conversation log + structured profile (SQLite)
+  profile.py        per-turn structured-profile extraction (Phase 3)
+  hotkey.py         global Option-key listener (press/release for hold-to-talk)
+  voice.py          mic capture (sounddevice) + local STT (faster-whisper)
+  tts.py            speech output: ElevenLabs, falling back to edge-tts
+  tools/            real system access via Groq function calling (see Tools above)
+  proactive.py      background jobs: morning brief, GitHub watcher, idle nudge
+  portfolio.py      IBKR polling (ib_insync) + SQLite cache/history for the dashboard
+  dashboard.py      calendar/GitHub/weather/news polling + morning score (SQLite)
+  weather.py / news.py / github_status.py   small shared fetch helpers
+  server.py         FastAPI + WebSocket bridge, REST endpoints, serves /dashboard
+dashboard/
+  src/              React dashboard (orb, chat log, portfolio, calendar, etc.)
+  dist/             built output served by server.py at /dashboard (run `npm run build`)
+start.sh            launches the Python backend — used by launchd
 com.jarvis.app.plist   launchd LaunchAgent (not installed automatically)
 ```
 

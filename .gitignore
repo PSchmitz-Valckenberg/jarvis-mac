@@ -223,9 +223,15 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Electron dashboard (Phase 5)
-electron/node_modules/
-electron/dist/
+# Dashboard frontend (built locally via `npm run build`)
+dashboard/node_modules/
+dashboard/dist/
+
+# Jarvis dashboard data (portfolio cache/history, morning score)
+jarvis_dashboard.db
+jarvis_dashboard.db-journal
+jarvis_dashboard.db-wal
+jarvis_dashboard.db-shm
 
 # Jarvis runtime logs (start.sh / launchd)
 jarvis.log

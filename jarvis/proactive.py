@@ -15,20 +15,17 @@ hotkey/voice/HTTP path):
 
 from __future__ import annotations
 
-import json
-import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
 
-import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import config
+from .github_status import fetch_open_prs
 from .tools.calendar import ListCalendarEventsTool
-
-GITHUB_TIMEOUT_SECONDS = 15
+from .weather import fetch_current_weather
 
 
 def _parse_hhmm(value: str) -> tuple[int, int]:
@@ -116,7 +113,7 @@ class ProactivityEngine:
             return None
         lines = []
         for repo in config.github_repos:
-            prs = self._fetch_open_prs(repo)
+            prs = fetch_open_prs(repo)
             if prs is None:
                 continue
             if prs:
@@ -129,19 +126,8 @@ class ProactivityEngine:
     def _weather_summary(self) -> str | None:
         if config.weather_latitude is None or config.weather_longitude is None:
             return None
-        try:
-            response = requests.get(
-                "https://api.open-meteo.com/v1/forecast",
-                params={
-                    "latitude": config.weather_latitude,
-                    "longitude": config.weather_longitude,
-                    "current_weather": "true",
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
-            weather = response.json()["current_weather"]
-        except Exception:  # noqa: BLE001 — weather is a nice-to-have, never block the brief on it
+        weather = fetch_current_weather(config.weather_latitude, config.weather_longitude)
+        if weather is None:
             return None
         return f"Wetter: {weather['temperature']}°C, Wind {weather['windspeed']} km/h."
 
@@ -163,26 +149,9 @@ class ProactivityEngine:
         return f"Offene Aufgaben: {preview}{suffix}."
 
     # ── GitHub watcher ───────────────────────────────────────────────
-    def _fetch_open_prs(self, repo: str) -> list[dict[str, Any]] | None:
-        try:
-            result = subprocess.run(
-                ["gh", "pr", "list", "--repo", repo, "--state", "open", "--json", "number,title,updatedAt"],
-                capture_output=True,
-                text=True,
-                timeout=GITHUB_TIMEOUT_SECONDS,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return None
-        if result.returncode != 0:
-            return None
-        try:
-            return json.loads(result.stdout or "[]")
-        except json.JSONDecodeError:
-            return None
-
     def _run_github_watch(self) -> None:
         for repo in config.github_repos:
-            prs = self._fetch_open_prs(repo)
+            prs = fetch_open_prs(repo)
             if prs is None:
                 continue
             current_state = {f"{pr['number']}:{pr['updatedAt']}" for pr in prs}
