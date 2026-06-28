@@ -190,6 +190,25 @@ export function useJarvisDashboard() {
     }
   }, []);
 
+  const fetchWeatherForecast = useCallback(async () => {
+    try {
+      const res = await fetch(API("/api/weather/forecast"));
+      const data = await res.json();
+      return data.forecast;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const fetchHeadlineSummary = useCallback(async (headline) => {
+    try {
+      const res = await fetch(API(`/api/news/summary?headline=${encodeURIComponent(headline)}`));
+      return await res.json();
+    } catch {
+      return { error: "Zusammenfassung konnte nicht geladen werden." };
+    }
+  }, []);
+
   return {
     connected,
     state,
@@ -206,5 +225,7 @@ export function useJarvisDashboard() {
     morningScore,
     setMorningScore: setMorningScoreRemote,
     fetchSparkline,
+    fetchWeatherForecast,
+    fetchHeadlineSummary,
   };
 }

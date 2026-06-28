@@ -21,7 +21,8 @@ export default function App() {
     newsPoints,
     morningScore,
     setMorningScore,
-    fetchSparkline,
+    fetchWeatherForecast,
+    fetchHeadlineSummary,
   } = useJarvisDashboard();
 
   return (
@@ -29,23 +30,28 @@ export default function App() {
       <TopBar connected={connected} />
       <div className="main-grid">
         <ErrorBoundary>
-          <LeftColumn state={state} ticker={ticker} log={log} status={status} />
+          <LeftColumn state={state} ticker={ticker} log={log} status={status} portfolio={portfolio} />
         </ErrorBoundary>
         <ErrorBoundary>
-          <CenterColumn portfolio={portfolio} fetchSparkline={fetchSparkline} />
+          <CenterColumn
+            newsHeadlines={newsHeadlines}
+            newsPoints={newsPoints}
+            fetchHeadlineSummary={fetchHeadlineSummary}
+          />
         </ErrorBoundary>
         <ErrorBoundary>
           <RightColumn
             calendarEvents={calendarEvents}
             githubRepos={githubRepos}
             weather={weather}
+            fetchWeatherForecast={fetchWeatherForecast}
             morningScore={morningScore}
             setMorningScore={setMorningScore}
           />
         </ErrorBoundary>
       </div>
       <ErrorBoundary>
-        <BottomBar headlines={newsHeadlines} points={newsPoints} status={status} />
+        <BottomBar status={status} />
       </ErrorBoundary>
     </div>
   );

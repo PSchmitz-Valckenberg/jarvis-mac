@@ -20,8 +20,9 @@ from .config import config
 from .github_status import fetch_open_prs
 from .news import fetch_headlines
 from .news_geo import geotag_headlines
+from .news_summary import summarize_headline
 from .tools.calendar import list_calendar_events_structured
-from .weather import fetch_current_weather
+from .weather import fetch_current_weather, fetch_weather_with_forecast
 
 NEWS_RSS_URL = "https://www.tagesschau.de/xml/rss2/"
 CALENDAR_INTERVAL_MINUTES = 5
@@ -79,6 +80,14 @@ class DashboardService:
         if config.weather_latitude is None or config.weather_longitude is None:
             return None
         return fetch_current_weather(config.weather_latitude, config.weather_longitude)
+
+    def get_weather_forecast(self) -> dict[str, Any] | None:
+        if config.weather_latitude is None or config.weather_longitude is None:
+            return None
+        return fetch_weather_with_forecast(config.weather_latitude, config.weather_longitude)
+
+    def get_headline_summary(self, headline: str) -> dict[str, Any]:
+        return summarize_headline(headline)
 
     def get_news(self) -> list[str]:
         return fetch_headlines(NEWS_RSS_URL)
