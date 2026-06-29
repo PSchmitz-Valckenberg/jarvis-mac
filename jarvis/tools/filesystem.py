@@ -1,4 +1,12 @@
-"""File system access — read, write, and search files on this machine."""
+"""File system access — read, write, and search files on this machine.
+
+There's no sandboxing here either (see run_shell) — these tools just block
+a denylist of paths that are obviously never meant to be read or
+overwritten by an LLM (SSH/cloud credentials, secrets, login keychains).
+That's a basic guardrail against the model wandering somewhere it
+shouldn't on a routine request, not a security boundary: run_shell has the
+same filesystem access and isn't restricted by it.
+"""
 
 from __future__ import annotations
 
@@ -15,10 +23,39 @@ MAX_READ_CHARS = 4_000
 MAX_LIST_ENTRIES = 80
 MAX_LIST_CHARS = 3_000
 
+# Directories/files commonly holding credentials or secrets — off-limits to
+# read_file/write_file/list_files regardless of how they're reached (~, an
+# absolute path, or a relative path that resolves into one of these).
+_BLOCKED_PATH_PARTS = {
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".kube",
+    ".docker",
+    "Keychains",
+}
+_BLOCKED_NAMES = {
+    ".env",
+    "id_rsa",
+    "id_ed25519",
+    "credentials",
+}
+
+
+def _is_blocked(target: Path) -> bool:
+    parts = target.expanduser().parts
+    if any(part in _BLOCKED_PATH_PARTS for part in parts):
+        return True
+    name = target.name
+    return name in _BLOCKED_NAMES or name.startswith(".env")
+
 
 def _resolve(path: str) -> Path:
     expanded = Path(path).expanduser()
-    return expanded if expanded.is_absolute() else (Path.cwd() / expanded)
+    target = expanded if expanded.is_absolute() else (Path.cwd() / expanded)
+    if _is_blocked(target):
+        raise ToolError(f"Access to {target} is blocked (looks like a credentials/secrets path)")
+    return target
 
 
 class ReadFileTool(Tool):

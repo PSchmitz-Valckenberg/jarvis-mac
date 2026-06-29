@@ -243,6 +243,17 @@ permissions and have no sandboxing or confirmation step** — by design,
 for a single trusted user on their own machine. Set `TOOLS_ENABLED=false`
 if you'd rather Jarvis stay a plain chatbot.
 
+> **⚠️ Security:** Jarvis runs arbitrary shell commands and file writes
+> with your own user permissions — there is no sandbox. This is only safe
+> as a single-user tool running locally on your own Mac. Never run it
+> with a shared/public `GROQ_API_KEY`, never expose its server (port
+> `8765`) beyond `127.0.0.1`, and don't let untrusted input reach it
+> (e.g. don't wire it up to anything that lets a stranger send it a
+> prompt). `read_file`/`write_file`/`list_files` block a denylist of
+> obviously sensitive paths (`.ssh`, `.aws`, `.env`, keychains, …), but
+> that's a basic guardrail, not a security boundary — `run_shell` can
+> still reach anything those tools block.
+
 ## Proactivity (Phase 2)
 
 With `PROACTIVITY_ENABLED=true` (default), `jarvis/proactive.py` runs
