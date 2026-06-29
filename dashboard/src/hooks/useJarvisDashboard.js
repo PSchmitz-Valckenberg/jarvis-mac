@@ -89,8 +89,23 @@ export function useJarvisDashboard() {
           case "transcript":
             setLog((prev) => [...prev, { role: "user", text: data.text }].slice(-5));
             break;
+          case "reply_chunk":
+            setLog((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "assistant" && last.streaming) {
+                return [...prev.slice(0, -1), { ...last, text: last.text + data.text }].slice(-5);
+              }
+              return [...prev, { role: "assistant", text: data.text, streaming: true }].slice(-5);
+            });
+            break;
           case "reply":
-            setLog((prev) => [...prev, { role: "assistant", text: data.text }].slice(-5));
+            setLog((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "assistant" && last.streaming) {
+                return [...prev.slice(0, -1), { role: "assistant", text: data.text }].slice(-5);
+              }
+              return [...prev, { role: "assistant", text: data.text }].slice(-5);
+            });
             break;
           case "error":
             setLog((prev) => [...prev, { role: "system", text: data.message }].slice(-5));

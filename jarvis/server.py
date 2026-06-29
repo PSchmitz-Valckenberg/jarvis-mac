@@ -82,7 +82,18 @@ class JarvisBackend:
         self.memory = self._build_memory()
         self.speaker = Speaker() if config.tts_enabled else None
 
-        self.tools = build_default_registry() if config.tools_enabled else None
+        # Built before the tool registry so read_portfolio/read_news/
+        # read_weather can be wired up to them — see build_default_registry.
+        self.portfolio = PortfolioService(
+            db_path=config.dashboard_db_path,
+            flex_token=config.ibkr_flex_token,
+            flex_query_id=config.ibkr_flex_query_id,
+            poll_interval_minutes=config.ibkr_flex_poll_minutes,
+            on_update=lambda data: hub.broadcast({"type": "portfolio_update", "portfolio": data}),
+        )
+        self.dashboard = DashboardService(db_path=config.dashboard_db_path, broadcast=hub.broadcast)
+
+        self.tools = build_default_registry(portfolio=self.portfolio, dashboard=self.dashboard) if config.tools_enabled else None
 
         # Structured profile extraction needs somewhere to persist the
         # profile — without MemoryStore there's nothing to build on.
@@ -122,15 +133,6 @@ class JarvisBackend:
             if config.proactivity_enabled
             else None
         )
-
-        self.portfolio = PortfolioService(
-            db_path=config.dashboard_db_path,
-            flex_token=config.ibkr_flex_token,
-            flex_query_id=config.ibkr_flex_query_id,
-            poll_interval_minutes=config.ibkr_flex_poll_minutes,
-            on_update=lambda data: hub.broadcast({"type": "portfolio_update", "portfolio": data}),
-        )
-        self.dashboard = DashboardService(db_path=config.dashboard_db_path, broadcast=hub.broadcast)
 
     def _build_memory(self) -> MemoryStore | None:
         if not config.memory_enabled:
@@ -246,10 +248,17 @@ class JarvisBackend:
         def _on_tool_call(name: str, arguments: dict[str, Any], result: str) -> None:
             hub.broadcast({"type": "tool_call", "name": name, "arguments": arguments, "result": result})
 
+        def _on_chunk(text: str) -> None:
+            # A newer turn (barge-in) bumps the generation — a stale
+            # streaming turn's chunks would otherwise keep landing in the
+            # dashboard's chat log after the user's already moved on.
+            if self._is_current(generation):
+                hub.broadcast({"type": "reply_chunk", "text": text})
+
         try:
             if self.brain is None:
                 raise LLMError(self.brain_error or "LLM not configured")
-            reply = self.brain.ask(prompt, on_tool_call=_on_tool_call)
+            reply = self.brain.ask(prompt, on_tool_call=_on_tool_call, on_chunk=_on_chunk)
         except LLMError as exc:
             hub.broadcast({"type": "error", "message": str(exc)})
             if self._is_current(generation):

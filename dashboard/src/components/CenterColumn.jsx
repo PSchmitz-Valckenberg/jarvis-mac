@@ -42,7 +42,7 @@ export default function CenterColumn({ newsHeadlines, newsPoints, fetchHeadlineS
           <span className="accent">{newsPoints.length} VERORTET</span>
         </p>
         <ErrorBoundary fallback={<div className="empty-hint">Globus nicht verfügbar (WebGL fehlt).</div>}>
-          <NewsGlobe points={newsPoints} />
+          <NewsGlobe points={newsPoints} onPointClick={setSelectedHeadline} />
         </ErrorBoundary>
       </div>
 

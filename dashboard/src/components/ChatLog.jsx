@@ -10,6 +10,7 @@ export default function ChatLog({ log }) {
         {log.map((msg, i) => (
           <div key={i} className={`chat-msg ${msg.role} fade-in`}>
             {msg.text}
+            {msg.streaming && <span className="chat-msg__cursor">▋</span>}
           </div>
         ))}
       </div>

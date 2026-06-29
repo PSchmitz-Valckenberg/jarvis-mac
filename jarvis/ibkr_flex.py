@@ -49,12 +49,21 @@ def fetch_statement_xml(token: str, query_id: str) -> str:
     if not reference_code or not statement_url:
         raise FlexError("SendRequest succeeded but didn't return a reference code/URL")
 
-    for _ in range(MAX_POLL_ATTEMPTS):
+    for attempt in range(MAX_POLL_ATTEMPTS):
         time.sleep(POLL_INTERVAL_SECONDS)
-        get_response = requests.get(
-            statement_url, params={"q": reference_code, "t": token, "v": "3"}, timeout=REQUEST_TIMEOUT_SECONDS
-        )
-        get_response.raise_for_status()
+        try:
+            get_response = requests.get(
+                statement_url, params={"q": reference_code, "t": token, "v": "3"}, timeout=REQUEST_TIMEOUT_SECONDS
+            )
+            get_response.raise_for_status()
+        except requests.exceptions.RequestException:
+            # A DNS/connection hiccup on one poll shouldn't abort the whole
+            # fetch — IBKR's GetStatement host is a CDN alias that's seen
+            # the occasional transient resolution failure, and the
+            # statement is still generating server-side regardless.
+            if attempt < MAX_POLL_ATTEMPTS - 1:
+                continue
+            raise
         text = get_response.text
         if not text.lstrip().startswith("<FlexStatementResponse"):
             return text  # the actual <FlexQueryResponse> report

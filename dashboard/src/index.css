@@ -217,6 +217,15 @@ body {
 .chat-msg.system { border-color: var(--red); color: #ff9aa6; }
 .chat-msg.tool { border-color: var(--text-dim); color: var(--text-dim); }
 
+.chat-msg__cursor {
+  color: var(--green);
+  animation: cursor-blink 0.9s step-start infinite;
+}
+
+@keyframes cursor-blink {
+  50% { opacity: 0; }
+}
+
 /* ── Center column: portfolio ────────────────────────────────────── */
 .gauge {
   text-align: center;

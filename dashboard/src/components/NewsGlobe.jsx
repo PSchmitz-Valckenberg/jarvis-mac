@@ -13,7 +13,7 @@ const PRIORITY_SIZE = {
   low: 0.45,
 };
 
-export default function NewsGlobe({ points }) {
+export default function NewsGlobe({ points, onPointClick }) {
   const wrapRef = useRef(null);
   const globeRef = useRef(null);
   const [size, setSize] = useState({ width: 320, height: 200 });
@@ -31,10 +31,13 @@ export default function NewsGlobe({ points }) {
   useEffect(() => {
     const globe = globeRef.current;
     if (!globe) return;
-    globe.controls().autoRotate = true;
-    globe.controls().autoRotateSpeed = 0.6;
-    globe.controls().enableZoom = false;
-    globe.pointOfView({ lat: 20, lng: 10, altitude: 2.2 });
+    const controls = globe.controls();
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.6;
+    controls.enableZoom = true;
+    controls.minDistance = 110; // closest you can scroll/pinch in
+    controls.maxDistance = 420; // furthest you can scroll/pinch out
+    globe.pointOfView({ lat: 20, lng: 10, altitude: 1.4 });
   }, []);
 
   const data = (points || []).map((p) => ({
@@ -62,6 +65,7 @@ export default function NewsGlobe({ points }) {
         pointRadius="size"
         pointResolution={12}
         pointLabel={(p) => `${p.title}\n${p.location}`}
+        onPointClick={(p) => onPointClick?.(p.title)}
       />
     </div>
   );
