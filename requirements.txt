@@ -1,31 +1,31 @@
 # Core
-python-dotenv>=1.0.0      # load config from .env
-groq>=0.11.0              # Groq LLM API client
-pynput>=1.7.7             # global hotkey listener (Option key)
+python-dotenv==1.2.2      # load config from .env
+groq==1.5.0               # Groq LLM API client
+pynput==1.8.2             # global hotkey listener (Option key)
 
 # Voice (Phase 2)
-faster-whisper>=1.0.3     # local STT (CTranslate2, CPU-friendly)
-sounddevice>=0.5.0        # microphone capture
-numpy>=1.26.0             # audio buffer handling
+faster-whisper==1.2.1     # local STT (CTranslate2, CPU-friendly)
+sounddevice==0.5.5        # microphone capture
+numpy==2.5.0              # audio buffer handling
 
 # Text-to-speech (Phase 4)
-edge-tts>=6.1.0           # free online TTS; playback via macOS's built-in afplay
-elevenlabs>=2.0.0         # higher-quality TTS (optional, free tier ~10k chars/mo)
+edge-tts==7.2.8           # free online TTS; playback via macOS's built-in afplay
+elevenlabs==2.54.0        # higher-quality TTS (optional, free tier ~10k chars/mo)
 
 # Dashboard backend bridge (Phase 5) — the Electron/React UI talks to this
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
+fastapi==0.138.1
+uvicorn[standard]==0.49.0
 
 # Tools (Phase 1) — real system integration: web search, files, shell,
 # apps, clipboard, browser, calendar (AppleScript), screenshot+vision
-tavily-python>=0.5.0      # web search; only used if TAVILY_API_KEY is set
+tavily-python==0.7.26     # web search; only used if TAVILY_API_KEY is set
 
 # Proactivity layer (Phase 2) — morning brief, GitHub watcher, idle nudge
-apscheduler>=3.10.0
-requests>=2.31.0          # Open-Meteo (weather), no API key needed
+apscheduler==3.11.2
+requests==2.34.2          # Open-Meteo (weather), no API key needed
 
 # Camera input (Phase 4) — one frame from the webcam for the see_camera tool
-opencv-python-headless>=4.9.0
+opencv-python-headless==4.13.0.92
 
 # --- Phase 6+ (commented until needed) ---
 # pyobjc                  # deeper macOS integration (clipboard, app launch)
