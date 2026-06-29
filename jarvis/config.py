@@ -43,6 +43,7 @@ def _resolve_db_path(value: str | None, default_name: str) -> str:
 class Config:
     groq_api_key: str
     groq_model: str
+    groq_fallback_model: str
     temperature: float
     max_tokens: int
     hotkey: str
@@ -87,6 +88,7 @@ class Config:
         return cls(
             groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),
             groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
+            groq_fallback_model=os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant").strip(),
             temperature=float(os.getenv("TEMPERATURE", "0.6")),
             max_tokens=int(os.getenv("MAX_TOKENS", "1024")),
             hotkey=os.getenv("HOTKEY", "alt").strip().lower(),

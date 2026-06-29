@@ -25,6 +25,7 @@ from .fx import fetch_rate
 from .ibkr_flex import FlexError, fetch_statement_xml, parse_positions
 
 BASE_CURRENCY = "EUR"
+RETRY_INTERVAL_SECONDS = 5 * 60
 
 
 class PortfolioService:
@@ -165,7 +166,13 @@ class PortfolioService:
                 self._save_cache(data)
             if self.on_update is not None:
                 self.on_update(data)
-            self._stop.wait(self.poll_interval_seconds)
+            # A failed poll (transient DNS hiccup, IBKR hiccup, ...) waiting
+            # out the full interval (often hours) before retrying would
+            # leave the dashboard stuck on stale data far longer than
+            # necessary — retry soon instead, and only fall back to the
+            # normal cadence once a poll actually succeeds.
+            wait_seconds = self.poll_interval_seconds if data.get("connected") else RETRY_INTERVAL_SECONDS
+            self._stop.wait(wait_seconds)
 
     def _fetch_once(self) -> dict[str, Any]:
         if not self.flex_token or not self.flex_query_id:
