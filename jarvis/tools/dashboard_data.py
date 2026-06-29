@@ -56,6 +56,26 @@ class ReadPortfolioTool(Tool):
         return "\n".join(lines)
 
 
+class ReadCalendarTool(Tool):
+    name = "read_calendar"
+    description = (
+        "Get today's calendar events from the dashboard's cache — instant, "
+        "unlike list_calendar_events which queries Calendar.app directly "
+        "and can take 30+ seconds. Use this for 'what's on today' "
+        "questions; fall back to list_calendar_events only for other days "
+        "or to add an event."
+    )
+
+    def __init__(self, dashboard: "DashboardService") -> None:
+        self._dashboard = dashboard
+
+    def run(self) -> str:
+        events = self._dashboard.get_calendar()
+        if not events:
+            return "Keine Termine heute."
+        return "\n".join(f"{e['title']} — {e['start']} ({e['calendar']})" for e in events)
+
+
 class ReadNewsTool(Tool):
     name = "read_news"
     description = "Get the current news headlines shown on the dashboard."

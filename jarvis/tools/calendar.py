@@ -8,6 +8,7 @@ date directly in AppleScript is locale-dependent and fragile.
 from __future__ import annotations
 
 import subprocess
+import time
 from datetime import datetime
 
 from .base import Tool, ToolError
@@ -18,8 +19,30 @@ from .base import Tool, ToolError
 # how AppleEvents to it behaves, so this timeout is generous on purpose.
 CALENDAR_TIMEOUT_SECONDS = 45
 
+# Some AppleScript pings (e.g. "get name") succeed even when Calendar.app
+# isn't actually running — but querying real data (events of a calendar)
+# fails with "-600 program isn't running" if only a widget extension is
+# alive, not the main app. Launching it in the background first avoids that.
+LAUNCH_WAIT_SECONDS = 10.0
+
+
+def _ensure_calendar_running() -> None:
+    subprocess.run(["open", "-g", "-a", "Calendar"], capture_output=True)
+    deadline = time.monotonic() + LAUNCH_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            ["osascript", "-e", 'tell application "Calendar" to running'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.stdout.strip() == "true":
+            return
+        time.sleep(0.3)
+
 
 def _run_applescript(script: str) -> str:
+    _ensure_calendar_running()
     try:
         result = subprocess.run(
             ["osascript"], input=script, capture_output=True, text=True, timeout=CALENDAR_TIMEOUT_SECONDS
