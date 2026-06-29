@@ -17,7 +17,7 @@ from .browser import OpenUrlTool, SearchWebBrowserTool
 from .calendar import AddCalendarEventTool, ListCalendarEventsTool
 from .camera import SeeCameraTool
 from .clipboard import ReadClipboardTool, WriteClipboardTool
-from .dashboard_data import ReadNewsTool, ReadPortfolioTool, ReadWeatherTool
+from .dashboard_data import ReadCalendarTool, ReadNewsTool, ReadPortfolioTool, ReadWeatherTool
 from .filesystem import ListFilesTool, ReadFileTool, WriteFileTool
 from .registry import ToolRegistry
 from .shell import RunShellTool
@@ -61,6 +61,7 @@ def build_default_registry(
     if portfolio is not None:
         tools.append(ReadPortfolioTool(portfolio))
     if dashboard is not None:
+        tools.append(ReadCalendarTool(dashboard))
         tools.append(ReadNewsTool(dashboard))
         tools.append(ReadWeatherTool(dashboard))
 

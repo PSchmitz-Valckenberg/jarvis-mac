@@ -37,6 +37,13 @@ class DashboardService:
         self._scheduler = BackgroundScheduler(daemon=True)
         self._init_db()
 
+        # AppleScript calendar queries reliably take 25-30s+ (Calendar.app's
+        # own scripting bridge is just slow, not something we control) — far
+        # too slow to do on every dashboard load or every chat turn that
+        # asks about today. Cached here, refreshed only by the periodic job.
+        self._calendar_lock = threading.Lock()
+        self._calendar_cache: list[dict[str, Any]] = []
+
     def _init_db(self) -> None:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
@@ -68,9 +75,13 @@ class DashboardService:
 
     # ── reads (used by both the GET endpoints and the push jobs) ───────
     def get_calendar(self) -> list[dict[str, Any]]:
+        with self._calendar_lock:
+            return list(self._calendar_cache)
+
+    def _fetch_calendar_fresh(self) -> list[dict[str, Any]]:
         try:
             return list_calendar_events_structured(days_ahead=1)
-        except Exception:  # noqa: BLE001 — Calendar.app hiccups shouldn't 500 the dashboard
+        except Exception:  # noqa: BLE001 — Calendar.app hiccups shouldn't break the refresh job
             return []
 
     def get_github(self) -> dict[str, list[dict[str, Any]]]:
@@ -116,7 +127,10 @@ class DashboardService:
 
     # ── push jobs ────────────────────────────────────────────────────
     def _push_calendar(self) -> None:
-        self._broadcast({"type": "calendar_update", "events": self.get_calendar()})
+        events = self._fetch_calendar_fresh()
+        with self._calendar_lock:
+            self._calendar_cache = events
+        self._broadcast({"type": "calendar_update", "events": events})
 
     def _push_github(self) -> None:
         self._broadcast({"type": "github_prs_update", "repos": self.get_github()})

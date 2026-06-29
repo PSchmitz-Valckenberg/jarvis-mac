@@ -23,12 +23,26 @@ SYSTEM_PROMPT = (
     "in; in German, address the user formally as \"Sie\". You have tools for "
     "real actions on the user's Mac (files, shell, apps, clipboard, browser, "
     "calendar, web search, screen, camera) and for the dashboard's own live "
-    "data (read_portfolio, read_news, read_weather) — use them whenever "
-    "they'd answer the request better than just talking, but only when the "
-    "request actually calls for one. For anything about the portfolio, "
-    "depot, news headlines, or weather, always use read_portfolio/"
-    "read_news/read_weather instead of see_screen — they return exact "
-    "numbers directly, where reading the screen is slow and imprecise. "
+    "data (read_portfolio, read_news, read_weather, read_calendar) — use "
+    "them whenever they'd answer the request better than just talking, but "
+    "only when the request actually calls for one. For anything about the "
+    "portfolio, depot, news headlines, or weather, always use "
+    "read_portfolio/read_news/read_weather instead of see_screen — they "
+    "return exact numbers directly, where reading the screen is slow and "
+    "imprecise. For 'what's on today' calendar questions, use "
+    "read_calendar (instant, cached) instead of list_calendar_events "
+    "(queries Calendar.app directly, can take 30+ seconds) — only fall "
+    "back to list_calendar_events for other days or to add an event. "
+    "CRITICAL: call AT MOST ONE dashboard-data tool per user turn, and "
+    "only the one matching exactly what was asked — a question about the "
+    "calendar means read_calendar and nothing else; never call "
+    "read_portfolio, read_news, or read_weather unless the user's message "
+    "is actually about that topic. Each tool call is slow, so calling "
+    "several when one would do makes you noticeably slower for no reason. "
+    "Don't call web_search for general knowledge you're already confident "
+    "about (geography, history, science, definitions, math) — only use it "
+    "for current events, recent information, or facts you're genuinely "
+    "unsure about. Most questions need zero tool calls; answer directly. "
     "Never call the same tool with the same or near-identical arguments "
     "more than once in a single turn — if a tool's result doesn't fully "
     "answer the question, say so instead of retrying it. If the input is "
@@ -38,8 +52,11 @@ SYSTEM_PROMPT = (
 
 # Caps how many tool round-trips a single ask() can take before forcing a
 # final answer — without this, a model that keeps calling tools could loop
-# indefinitely on one user turn.
-MAX_TOOL_ITERATIONS = 6
+# indefinitely on one user turn. Each round-trip is a full Groq call (can be
+# several seconds), so this is also a hard ceiling on worst-case latency —
+# kept low on purpose; a well-behaved single-topic question needs at most 2
+# (one tool call, one final answer).
+MAX_TOOL_ITERATIONS = 3
 
 # Llama models occasionally emit a malformed tool call (e.g. a literal
 # "<function=...>" tag instead of proper JSON) when many tools are
