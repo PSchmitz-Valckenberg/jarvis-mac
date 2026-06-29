@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-import time
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
